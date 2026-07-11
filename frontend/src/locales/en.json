@@ -1,0 +1,109 @@
+{
+  "nav": {
+    "api": "API",
+    "db": "DB",
+    "online": "Online",
+    "offline": "Offline",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "checking": "Checking..."
+  },
+  "banner": {
+    "title": "System Configuration Alert",
+    "apiError": "Failed to reach backend API: {{error}}. Make sure the FastAPI server is running.",
+    "dbError": "The backend API is connected, but it could not reach the PostgreSQL database. Verify your DATABASE_URL configuration."
+  },
+  "hero": {
+    "badge": "📷 Phase 2: Vision Analysis Active",
+    "headline1": "Scan. Know.",
+    "headline2": "Eat Safe.",
+    "tagline": "Instantly decode packed food ingredients. Upload an image of any food product packaging ingredients list and Gemini Vision will extract the text."
+  },
+  "upload": {
+    "title": "Analyze Food Label",
+    "subtitle": "Capture or pick a photo of the ingredients list on the packaging.",
+    "dragPrompt": "Drag and drop packaging image",
+    "dropPrompt": "Drop your photo here",
+    "hint": "Or click to select a file (JPEG, PNG up to 5MB)",
+    "button": "Upload Product Photo",
+    "analyzing": "Analyzing with Gemini...",
+    "analyzeButton": "Analyze Ingredients",
+    "changePhoto": "Choose Different Photo"
+  },
+  "errors": {
+    "title": "Analysis/Upload Error",
+    "invalidType": "Invalid file type. Only JPEG and PNG images are supported on the front-end.",
+    "fileTooLarge": "File size exceeds the 5MB limit. Please upload a smaller file."
+  },
+  "extracted": {
+    "title": "Extracted Ingredients",
+    "copy": "Copy",
+    "copied": "Copied",
+    "footer": "Analysis completed by gemini-2.5-flash"
+  },
+  "features": {
+    "ai": {
+      "title": "AI Ingredient Extraction",
+      "desc": "Once you upload a label, Gemini Vision will review the image, isolate lists of food additives, compounds, and active ingredients, and extract them."
+    },
+    "blur": {
+      "title": "Focus & Blur Protection",
+      "desc": "Our local computer vision system runs a real-time blur assessment on your photo, ensuring only high-quality uploads reach Gemini, preserving API quotas."
+    }
+  },
+  "safety": {
+    "title": "Ingredient Safety Assessment",
+    "subtitle": "Comprehensive layperson safety analysis, allergen alerts, and safe limits",
+    "loading": "Running 3-layer lookup system for each ingredient...",
+    "loadingSubtitle": "Matching against database, Open Food Facts, and Gemini AI",
+    "detectedCategory": "Detected Product Category",
+    "col": {
+      "name": "Ingredient Name",
+      "status": "Status",
+      "whatIsThis": "What Is This?",
+      "reason": "Reason",
+      "allergen": "Allergen",
+      "frequency": "Frequency",
+      "source": "Source",
+      "noAllergen": "None"
+    }
+  },
+  "alternative": {
+    "loading": "Finding a healthier alternative…",
+    "label": "Healthier Alternative",
+    "heading": "Try this instead:",
+    "disclaimer": "Suggested by Gemini AI · For Indian consumers · Always consult a nutritionist for personalised advice"
+  },
+  "footer": {
+    "rights": "© {{year}} LabelLens. All rights reserved.",
+    "tagline": "Designed for health-conscious shoppers. Empowering healthy food decisions."
+  },
+  "lang": {
+    "label": "Language",
+    "en": "English",
+    "hi": "हिंदी",
+    "mr": "मराठी"
+  },
+  "search": {
+    "tabScan": "Scan Label",
+    "tabSearch": "Search Product",
+    "placeholder": "Search by product or brand name...",
+    "button": "Search",
+    "searching": "Searching...",
+    "noResults": "No matching products found."
+  },
+  "compare": {
+    "title": "Compare by Category",
+    "subtitle": "Discover which popular brands rank highest in safety and score.",
+    "select": "Choose a category...",
+    "biscuits": "Biscuits",
+    "ketchup": "Ketchup",
+    "juice": "Juice",
+    "chips": "Chips & Crisps",
+    "chocolates": "Chocolates",
+    "rank": "Rank",
+    "product": "Product",
+    "score": "Score",
+    "viewDetails": "View Details"
+  }
+}

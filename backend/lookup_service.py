@@ -258,7 +258,7 @@ def run_gemini_query(client: genai.Client, prompt: str) -> IngredientSafetySchem
                 allergen="none",
                 safe_frequency_per_week="avoid",
                 common_alias_names="Potassium Bromate, Potassium bromate, E924",
-                source_reference="Gemini AI"
+                source_reference="LabelLens AI Engine"
             )
 
     response = generate_content_with_fallback(
@@ -417,7 +417,7 @@ def lookup_ingredient(db: Session, client: genai.Client, name: str, language: st
     prompt = (
         f"You are a food safety expert. Generate a detailed safety profile for the food ingredient/additive: '{name_clean}'.\n"
         f"Generate structured JSON matching the schema.\n"
-        f"Set the source_reference to 'Gemini AI'.\n"
+        f"Set the source_reference to 'LabelLens AI Engine'.\n"
         f"Language instruction: {lang_instruction_l3}\n"
         f"Ensure simple_explanation explains what the chemical is, what it does, and where it comes from in very simple, "
         f"layperson language (no chemistry terms)."

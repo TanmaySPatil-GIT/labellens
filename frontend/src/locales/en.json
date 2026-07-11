@@ -17,7 +17,7 @@
     "badge": "📷 Phase 2: Vision Analysis Active",
     "headline1": "Scan. Know.",
     "headline2": "Eat Safe.",
-    "tagline": "Instantly decode packed food ingredients. Upload an image of any food product packaging ingredients list and Gemini Vision will extract the text."
+    "tagline": "Instantly decode packed food ingredients. Upload an image of any food product packaging ingredients list and our AI Engine will extract the text."
   },
   "upload": {
     "title": "Analyze Food Label",
@@ -26,7 +26,7 @@
     "dropPrompt": "Drop your photo here",
     "hint": "Or click to select a file (JPEG, PNG up to 5MB)",
     "button": "Upload Product Photo",
-    "analyzing": "Analyzing with Gemini...",
+    "analyzing": "Analyzing with AI...",
     "analyzeButton": "Analyze Ingredients",
     "changePhoto": "Choose Different Photo",
     "takePhoto": "📷 Take Photo",
@@ -41,23 +41,23 @@
     "title": "Extracted Ingredients",
     "copy": "Copy",
     "copied": "Copied",
-    "footer": "Analysis completed by gemini-2.5-flash"
+    "footer": "Analysis completed by LabelLens AI Engine"
   },
   "features": {
     "ai": {
       "title": "AI Ingredient Extraction",
-      "desc": "Once you upload a label, Gemini Vision will review the image, isolate lists of food additives, compounds, and active ingredients, and extract them."
+      "desc": "Once you upload a label, our AI Engine will review the image, isolate lists of food additives, compounds, and active ingredients, and extract them."
     },
     "blur": {
       "title": "Focus & Blur Protection",
-      "desc": "Our local computer vision system runs a real-time blur assessment on your photo, ensuring only high-quality uploads reach Gemini, preserving API quotas."
+      "desc": "Our local computer vision system runs a real-time blur assessment on your photo, ensuring only high-quality uploads are processed, preserving API quotas."
     }
   },
   "safety": {
     "title": "Ingredient Safety Assessment",
     "subtitle": "Comprehensive layperson safety analysis, allergen alerts, and safe limits",
     "loading": "Running 3-layer lookup system for each ingredient...",
-    "loadingSubtitle": "Matching against database, Open Food Facts, and Gemini AI",
+    "loadingSubtitle": "Matching against database, Open Food Facts, and LabelLens AI Engine",
     "detectedCategory": "Detected Product Category",
     "col": {
       "name": "Ingredient Name",
@@ -74,7 +74,7 @@
     "loading": "Finding a healthier alternative…",
     "label": "Healthier Alternative",
     "heading": "Try this instead:",
-    "disclaimer": "Suggested by Gemini AI · For Indian consumers · Always consult a nutritionist for personalised advice"
+    "disclaimer": "Suggested by LabelLens AI Engine · For Indian consumers · Always consult a nutritionist for personalised advice"
   },
   "footer": {
     "rights": "© {{year}} LabelLens. All rights reserved.",

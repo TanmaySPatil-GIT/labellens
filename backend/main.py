@@ -151,9 +151,10 @@ async def health_check():
         "db_connected": db_connected
     }
 
-def detect_blur(image_bytes: bytes, threshold: float = 100.0) -> tuple[bool, float]:
+def detect_blur(image_bytes: bytes, threshold: float = 30.0) -> tuple[bool, float]:
     """
     Calculates the Laplacian variance of the image to determine if it is blurry.
+    Only rejects if the image resolution is high enough (>= 400px width/height) and variance < threshold.
     Returns (is_blurry, variance).
     """
     # Convert bytes to numpy array for OpenCV
@@ -167,6 +168,15 @@ def detect_blur(image_bytes: bytes, threshold: float = 100.0) -> tuple[bool, flo
     
     # Calculate Laplacian variance (measure of focus/high frequency changes)
     variance = cv2.Laplacian(gray, cv2.CV_64F).var()
+    
+    # Get image dimensions
+    height, width = gray.shape[:2]
+    print(f"[BLUR] Image uploaded: {width}x{height}, Laplacian variance: {variance:.2f} (threshold: {threshold})")
+    
+    # Skip strict blur rejection if resolution is too small
+    if width < 400 or height < 400:
+        return False, variance
+        
     return variance < threshold, variance
 
 @app.post("/api/analyze-image")
@@ -197,7 +207,7 @@ async def analyze_image(file: UploadFile = File(...)):
     
     # 3. Blur detection via OpenCV
     try:
-        is_blurry, variance = detect_blur(image_bytes, threshold=100.0)
+        is_blurry, variance = detect_blur(image_bytes, threshold=30.0)
         if is_blurry:
             raise HTTPException(
                 status_code=400,
@@ -262,7 +272,7 @@ async def analyze_image(file: UploadFile = File(...)):
         print(f"Gemini API invocation error: {api_err}")
         raise HTTPException(
             status_code=500,
-            detail=f"Google Gemini Vision API error: {str(api_err)}"
+            detail="AI analysis failed. Please try again in a moment."
         )
 
 # ──────────────────────────────────────────────────────────────────────

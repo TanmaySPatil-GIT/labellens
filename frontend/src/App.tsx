@@ -1842,7 +1842,7 @@ function App() {
                     'FDA':             { icon: '🇺🇸', url: 'https://www.fda.gov' },
                     'EFSA':            { icon: '🇪🇺', url: 'https://www.efsa.europa.eu' },
                     'Open Food Facts': { icon: '🥫', url: 'https://world.openfoodfacts.org' },
-                    'Gemini AI':       { icon: '🤖', url: 'https://ai.google.dev' },
+                    'LabelLens AI Engine': { icon: '🤖', url: '#' },
                     'System Fallback': { icon: '⚙️', url: '#' },
                   };
                   return (

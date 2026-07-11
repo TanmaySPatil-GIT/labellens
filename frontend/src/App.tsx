@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, DragEvent } from 'react';
+import { useState, useEffect, useRef, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { setLanguage, SUPPORTED_LANGS, type LangCode } from './i18n';
 import {
@@ -71,16 +71,27 @@ function App() {
   const [loadingAlternative, setLoadingAlternative] = useState<boolean>(false);
 
   // Phase 8 & 9 States
-  const [activeTab, setActiveTab] = useState<'scan' | 'search' | 'history' | 'favorites'>('scan');
+  const [activeTab, setActiveTab] = useState<'scan' | 'search' | 'ingredient' | 'history' | 'favorites'>('scan');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
+  // Standalone Ingredient Search States
+  const [ingredientQuery, setIngredientQuery] = useState('');
+  const [ingredientResult, setIngredientResult] = useState<any | null>(null);
+  const [searchingIngredient, setSearchingIngredient] = useState(false);
+  const [ingredientError, setIngredientError] = useState<string | null>(null);
+
   const [selectedCategory, setSelectedCategory] = useState('');
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+
+  const [categories, setCategories] = useState<any[]>([]);
+  const [categorySearch, setCategorySearch] = useState('');
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Phase 9 Auth & Data States
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -101,6 +112,7 @@ function App() {
   const [langOpen, setLangOpen] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   // System Health Check
@@ -128,8 +140,33 @@ function App() {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(`${apiUrl}/api/categories`);
+      if (response.ok) {
+        const data = await response.json();
+        setCategories(data.categories || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch categories list:", err);
+    }
+  };
+
   useEffect(() => {
     checkSystemHealth();
+    fetchCategories();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setCategoryDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, []);
 
   // Handle File Input Selection
@@ -188,6 +225,11 @@ function App() {
     fileInputRef.current?.click();
   };
 
+  // Trigger Camera Input Click
+  const triggerCameraSelect = () => {
+    cameraInputRef.current?.click();
+  };
+
   // Clear Staged Image
   const clearStagedImage = () => {
     setSelectedFile(null);
@@ -202,6 +244,9 @@ function App() {
     setLoadingAlternative(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
     }
   };
 
@@ -355,6 +400,37 @@ function App() {
       setSearchError(err.message || 'Error searching products.');
     } finally {
       setSearching(false);
+    }
+  };
+
+  const searchIngredient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ingredientQuery.trim()) {
+      setIngredientError('Ingredient name is required.');
+      return;
+    }
+    setSearchingIngredient(true);
+    setIngredientError(null);
+    setIngredientResult(null);
+
+    try {
+      const response = await fetch(
+        `${apiUrl}/api/search-ingredient?query=${encodeURIComponent(ingredientQuery.trim())}&language=${currentLang}`
+      );
+      if (!response.ok) {
+        throw new Error('Failed to lookup ingredient. Please try again.');
+      }
+      const data = await response.json();
+      
+      if (!data || data.safety_status === 'unknown') {
+        setIngredientError('No results found. Please check spelling or try the common name instead of a code.');
+      } else {
+        setIngredientResult(data);
+      }
+    } catch (err: any) {
+      setIngredientError(err.message || 'Error occurred during lookup.');
+    } finally {
+      setSearchingIngredient(false);
     }
   };
 
@@ -535,7 +611,7 @@ function App() {
     const endpoint = isLogin ? '/api/auth/login' : '/api/auth/signup';
     const payload = isLogin 
       ? { email: authEmail.trim(), password: authPassword }
-      : { name: authName.strip ? authName.strip() : authName, email: authEmail.trim(), password: authPassword };
+      : { name: authName.trim(), email: authEmail.trim(), password: authPassword };
 
     try {
       const response = await fetch(`${apiUrl}${endpoint}`, {
@@ -778,6 +854,15 @@ function App() {
               </button>
               <button
                 type="button"
+                onClick={() => setActiveTab('ingredient')}
+                className={`flex-1 min-w-[70px] py-1.5 px-3 sm:px-4 rounded-xl text-[10px] sm:text-xs font-bold transition-all duration-200 ${
+                  activeTab === 'ingredient' ? 'bg-white text-brand-teal shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                🧪 {t('search.tabIngredient')}
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab('history')}
                 className={`flex-1 min-w-[70px] py-1.5 px-3 sm:px-4 rounded-xl text-[10px] sm:text-xs font-bold transition-all duration-200 ${
                   activeTab === 'history' ? 'bg-white text-brand-teal shadow-sm' : 'text-slate-500 hover:text-slate-800'
@@ -801,12 +886,20 @@ function App() {
                 <h2 className="text-2xl font-bold text-slate-800 mb-2">{t('upload.title')}</h2>
                 <p className="text-sm text-slate-500 mb-6">{t('upload.subtitle')}</p>
                 
-                {/* Hidden native input */}
+                {/* Hidden native inputs */}
                 <input
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileChange}
                   accept="image/jpeg, image/png"
+                  className="hidden"
+                />
+                <input
+                  type="file"
+                  ref={cameraInputRef}
+                  onChange={handleFileChange}
+                  accept="image/*"
+                  capture="environment"
                   className="hidden"
                 />
 
@@ -908,12 +1001,28 @@ function App() {
                     </p>
                     <p className="text-xs text-slate-400 mb-6">{t('upload.hint')}</p>
                     
-                    <button
-                      type="button"
-                      className="px-6 py-2.5 bg-brand-teal hover:bg-teal-700 text-white font-bold rounded-xl transition shadow-md hover:shadow-lg focus:outline-none"
-                    >
-                      {t('upload.button')}
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md justify-center z-10">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerCameraSelect();
+                        }}
+                        className="flex-1 flex items-center justify-center space-x-2 px-6 py-3 bg-brand-teal hover:bg-teal-700 text-white font-bold rounded-xl transition shadow-md hover:shadow-lg focus:outline-none text-sm"
+                      >
+                        <span>{t('upload.takePhoto')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerFileSelect();
+                        }}
+                        className="flex-1 flex items-center justify-center space-x-2 px-6 py-3 bg-white border border-teal-200 text-brand-teal hover:bg-teal-50 font-bold rounded-xl transition focus:outline-none text-sm"
+                      >
+                        <span>{t('upload.chooseGallery')}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -981,6 +1090,97 @@ function App() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'ingredient' && (
+              /* Standalone Ingredient Search Interface */
+              <div className="flex flex-col h-full animate-fadeIn">
+                <h2 className="text-2xl font-bold text-slate-800 mb-2">🧪 Search an Ingredient</h2>
+                <p className="text-sm text-slate-500 mb-6">Search any chemical, additive, or ingredient by name (e.g. "MSG", "Tartrazine", "INS 211")</p>
+
+                <form onSubmit={searchIngredient} className="flex space-x-3 mb-6">
+                  <input
+                    type="text"
+                    value={ingredientQuery}
+                    onChange={(e) => setIngredientQuery(e.target.value)}
+                    placeholder="Search any ingredient or INS code..."
+                    className="flex-grow px-4 py-2.5 bg-white border border-teal-200 focus:border-brand-teal rounded-xl outline-none text-slate-800 font-medium placeholder-slate-400 transition"
+                  />
+                  <button
+                    type="submit"
+                    disabled={searchingIngredient}
+                    className="px-6 py-2.5 bg-brand-teal hover:bg-teal-700 text-white font-bold rounded-xl transition shadow-md hover:shadow-lg focus:outline-none flex items-center justify-center space-x-2"
+                  >
+                    {searchingIngredient ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>Searching...</span>
+                      </>
+                    ) : (
+                      <span>Search</span>
+                    )}
+                  </button>
+                </form>
+
+                {ingredientError && (
+                  <div className="mb-4 p-4 bg-amber-50 border border-amber-100 rounded-2xl text-xs font-semibold text-amber-800 flex items-start space-x-2 animate-fadeIn">
+                    <span className="shrink-0 mt-0.5">⚠️</span>
+                    <span>{ingredientError}</span>
+                  </div>
+                )}
+
+                {ingredientResult && (
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 shadow-sm flex flex-col space-y-4 animate-fadeIn">
+                    {/* Header: Name and Status Badge */}
+                    <div className="flex items-center justify-between gap-4">
+                      <h3 className="text-lg font-bold text-slate-800 truncate">{ingredientResult.ingredient}</h3>
+                      <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider flex items-center gap-1 shrink-0 ${
+                        ingredientResult.safety_status === 'safe'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                          : ingredientResult.safety_status === 'moderate'
+                          ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                          : 'bg-rose-50 text-rose-700 border border-rose-100'
+                      }`}>
+                        {ingredientResult.safety_status === 'safe' ? '🟢' : ingredientResult.safety_status === 'moderate' ? '🟡' : '🔴'}
+                        {ingredientResult.safety_status}
+                      </span>
+                    </div>
+
+                    {/* Explanations */}
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-brand-teal uppercase tracking-wider mb-1">What Is This?</h4>
+                        <p className="text-sm text-slate-700 leading-relaxed font-semibold">{ingredientResult.simple_explanation}</p>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Detailed Reason</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed">{ingredientResult.reason}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-200/60 text-xs">
+                      <div>
+                        <span className="text-slate-400 font-medium block">Allergen:</span>
+                        <span className="font-bold text-slate-700 uppercase">{ingredientResult.allergen || 'none'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 font-medium block">Recommended Limit:</span>
+                        <span className="font-bold text-slate-700">{ingredientResult.safe_frequency || 'no limit'}</span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 text-[10px] text-slate-400 flex items-center justify-between">
+                      <span>Source: <strong className="text-slate-500">{ingredientResult.source || 'FSSAI/WHO'}</strong></span>
+                      {ingredientResult.layer_used && (
+                        <span>Layer {ingredientResult.layer_used} Lookup</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1215,25 +1415,99 @@ function App() {
             <p className="text-sm text-slate-500">{t('compare.subtitle')}</p>
           </div>
           
-          <div className="relative shrink-0">
-            <select
-              id="category-compare-select"
-              value={selectedCategory}
-              onChange={handleCategoryChange}
-              className="w-48 px-4 py-2 bg-white border border-teal-200 focus:border-brand-teal rounded-xl text-xs font-bold text-slate-700 outline-none transition shadow-sm cursor-pointer appearance-none pr-8"
+          <div ref={dropdownRef} className="relative shrink-0 w-64">
+            {/* Dropdown Button */}
+            <button
+              type="button"
+              onClick={() => setCategoryDropdownOpen(!categoryDropdownOpen)}
+              className="w-full flex items-center justify-between px-4 py-2.5 bg-white border border-teal-200 hover:border-brand-teal rounded-xl text-xs font-bold text-slate-700 outline-none transition shadow-sm cursor-pointer"
             >
-              <option value="">{t('compare.select')}</option>
-              <option value="biscuits">{t('compare.biscuits')}</option>
-              <option value="ketchup">{t('compare.ketchup')}</option>
-              <option value="juice">{t('compare.juice')}</option>
-              <option value="chips">{t('compare.chips')}</option>
-              <option value="chocolates">{t('compare.chocolates')}</option>
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-              <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+              <span className="truncate">
+                {selectedCategory
+                  ? (categories.find(c => c.id === selectedCategory)?.name || 
+                     (selectedCategory.startsWith("en:") ? selectedCategory.substring(3).replace(/-/g, ' ').toUpperCase() : selectedCategory.toUpperCase()))
+                  : t('compare.select')}
+              </span>
+              <svg className="fill-current h-4 w-4 text-slate-500 shrink-0 ml-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                 <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
               </svg>
-            </div>
+            </button>
+
+            {/* Dropdown Menu Panel */}
+            {categoryDropdownOpen && (
+              <div className="absolute right-0 mt-1.5 w-full bg-white border border-teal-100 rounded-2xl shadow-xl z-50 flex flex-col max-h-[300px] overflow-hidden animate-fadeIn">
+                {/* Search Box */}
+                <div className="p-2 border-b border-slate-100 shrink-0">
+                  <input
+                    type="text"
+                    value={categorySearch}
+                    onChange={(e) => setCategorySearch(e.target.value)}
+                    placeholder="Search categories..."
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-teal-100 focus:border-brand-teal rounded-xl text-xs font-semibold text-slate-700 outline-none placeholder:text-slate-400"
+                    onClick={(e) => e.stopPropagation()} // prevent closing dropdown when clicking input
+                  />
+                </div>
+
+                {/* Categories List */}
+                <div className="overflow-y-auto flex-1 py-1">
+                  {/* Default / Unselected Option */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategory('');
+                      setLeaderboard([]);
+                      setCategorySearch('');
+                      setCategoryDropdownOpen(false);
+                    }}
+                    className={`w-full text-left px-4 py-2 text-xs font-bold transition-all duration-150 ${
+                      selectedCategory === '' ? 'bg-teal-50 text-brand-teal' : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {t('compare.select')}
+                  </button>
+
+                  {/* Dynamic Category List Options */}
+                  {(() => {
+                    const filtered = categories.filter(c =>
+                      c.name.toLowerCase().includes(categorySearch.toLowerCase())
+                    );
+                    
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="px-4 py-3 text-xs text-slate-400 text-center italic">
+                          No categories found
+                        </div>
+                      );
+                    }
+                    
+                    return filtered.map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCategory(cat.id);
+                          // Trigger comparison load
+                          const event = { target: { value: cat.id } } as any;
+                          handleCategoryChange(event);
+                          setCategorySearch('');
+                          setCategoryDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-xs font-semibold transition-all duration-150 flex items-center justify-between ${
+                          selectedCategory === cat.id ? 'bg-teal-50 text-brand-teal font-bold' : 'text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="truncate pr-2">{cat.name}</span>
+                        {cat.products && (
+                          <span className="text-[10px] text-slate-400 shrink-0 font-normal">
+                            ({cat.products} products)
+                          </span>
+                        )}
+                      </button>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

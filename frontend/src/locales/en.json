@@ -28,7 +28,9 @@
     "button": "Upload Product Photo",
     "analyzing": "Analyzing with Gemini...",
     "analyzeButton": "Analyze Ingredients",
-    "changePhoto": "Choose Different Photo"
+    "changePhoto": "Choose Different Photo",
+    "takePhoto": "📷 Take Photo",
+    "chooseGallery": "🖼️ Choose from Gallery"
   },
   "errors": {
     "title": "Analysis/Upload Error",
@@ -87,6 +89,7 @@
   "search": {
     "tabScan": "Scan Label",
     "tabSearch": "Search Product",
+    "tabIngredient": "Search Ingredient",
     "placeholder": "Search by product or brand name...",
     "button": "Search",
     "searching": "Searching...",

@@ -10,6 +10,8 @@ import urllib.parse
 import ssl
 from datetime import datetime, timedelta
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from PIL import Image
@@ -123,6 +125,11 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
+
+# Allow custom production origins if defined in .env
+env_origins = os.getenv("CORS_ORIGINS")
+if env_origins:
+    origins.extend([o.strip() for o in env_origins.split(",") if o.strip()])
 
 app.add_middleware(
     CORSMiddleware,
@@ -650,6 +657,70 @@ _CATEGORY_MOCK_DATA = {
             "code": "7622201140168",
             "ingredients_text": "Sugar, Milk Solids, Cocoa Butter, Cocoa Solids, Emulsifiers (INS 442, INS 476), Ethyl Vanillin"
         }
+    ],
+    "noodles": [
+        {
+            "name": "Maggi 2-Minute Masala Noodles",
+            "brand": "Maggi",
+            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/105/889/5476/front_en.11.400.jpg",
+            "code": "8901058895476",
+            "ingredients_text": "Wheat Flour, Palm Oil, Salt, Wheat Gluten, Potassium Chloride, Gelling Agent (INS 508), Raising Agent (INS 500ii), Humectant (INS 451i), Coriander, Chilli, Turmeric, Cumin, Aniseed, Fenugreek, Ginger, Black Pepper, Clove, Nutmeg, Cardamom, Monosodium Glutamate, Citric Acid"
+        },
+        {
+            "name": "Yippee Magic Masala Noodles",
+            "brand": "Sunfeast",
+            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/172/519/8124/front_en.15.400.jpg",
+            "code": "8901725198124",
+            "ingredients_text": "Wheat Flour, Refined Palm Oil, Iodised Salt, Wheat Gluten, Calcium Carbonate, Gelling Agent (INS 508), Humectant (INS 451i), Spices, Sugar, Garlic Powder, Onion Powder, Monosodium Glutamate, Yeast Extract"
+        }
+    ],
+    "instant-noodles": [
+        {
+            "name": "Maggi 2-Minute Masala Noodles",
+            "brand": "Maggi",
+            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/105/889/5476/front_en.11.400.jpg",
+            "code": "8901058895476",
+            "ingredients_text": "Wheat Flour, Palm Oil, Salt, Wheat Gluten, Potassium Chloride, Gelling Agent (INS 508), Raising Agent (INS 500ii), Humectant (INS 451i), Coriander, Chilli, Turmeric, Cumin, Aniseed, Fenugreek, Ginger, Black Pepper, Clove, Nutmeg, Cardamom, Monosodium Glutamate, Citric Acid"
+        },
+        {
+            "name": "Yippee Magic Masala Noodles",
+            "brand": "Sunfeast",
+            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/172/519/8124/front_en.15.400.jpg",
+            "code": "8901725198124",
+            "ingredients_text": "Wheat Flour, Refined Palm Oil, Iodised Salt, Wheat Gluten, Calcium Carbonate, Gelling Agent (INS 508), Humectant (INS 451i), Spices, Sugar, Garlic Powder, Onion Powder, Monosodium Glutamate, Yeast Extract"
+        }
+    ],
+    "pasta": [
+        {
+            "name": "Bambino Macaroni Pasta",
+            "brand": "Bambino",
+            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/124/810/0075/front_en.5.400.jpg",
+            "code": "8901248100075",
+            "ingredients_text": "Semolina, Durum Wheat Semolina"
+        },
+        {
+            "name": "YiPPee Tricolor Pasta Masala",
+            "brand": "Sunfeast",
+            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/172/510/3463/front_en.12.400.jpg",
+            "code": "8901725103463",
+            "ingredients_text": "Semolina, Wheat Gluten, Spices, Sugar, Iodised Salt, Dehydrated Vegetables, Hydrolyzed Vegetable Protein, Citric Acid"
+        }
+    ],
+    "pastas": [
+        {
+            "name": "Bambino Macaroni Pasta",
+            "brand": "Bambino",
+            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/124/810/0075/front_en.5.400.jpg",
+            "code": "8901248100075",
+            "ingredients_text": "Semolina, Durum Wheat Semolina"
+        },
+        {
+            "name": "YiPPee Tricolor Pasta Masala",
+            "brand": "Sunfeast",
+            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/172/510/3463/front_en.12.400.jpg",
+            "code": "8901725103463",
+            "ingredients_text": "Semolina, Wheat Gluten, Spices, Sugar, Iodised Salt, Dehydrated Vegetables, Hydrolyzed Vegetable Protein, Citric Acid"
+        }
     ]
 }
 
@@ -918,7 +989,10 @@ async def get_category_best(category: str, db = Depends(get_db)):
         print(f"[CATEGORY] OFF category search '{off_cat}' failed: {e}. Falling back to mock data.")
         
     if not products:
-        products = _CATEGORY_MOCK_DATA.get(cat_normalized, [])
+        mock_key = cat_normalized
+        if mock_key.startswith("en:"):
+            mock_key = mock_key[3:]
+        products = _CATEGORY_MOCK_DATA.get(mock_key, [])
         
     ranked_results = []
     for p in products:
@@ -1117,6 +1191,164 @@ async def delete_favorite(fav_id: int, user: models.User = Depends(get_current_u
         raise HTTPException(status_code=500, detail=f"Database error deleting favorite: {e}")
         
     return {"status": "success"}
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 11: Dynamic Categories & Standalone Ingredient Search Endpoints
+# ──────────────────────────────────────────────────────────────────────
+
+_categories_cache = {
+    "data": None,
+    "expiry": 0.0
+}
+
+@app.get("/api/categories")
+async def get_categories():
+    """
+    Fetches the full list of available food categories from Open Food Facts,
+    filters for English tags with > 50 products, sorted by product count descending.
+    Caches the list in-memory for 24 hours.
+    Falls back to mock categories if the API call fails.
+    """
+    global _categories_cache
+    now = time.time()
+    
+    # 1. Return from cache if valid
+    if _categories_cache["data"] and now < _categories_cache["expiry"]:
+        return {"categories": _categories_cache["data"]}
+        
+    # 2. Fetch from Open Food Facts categories API
+    url = "https://world.openfoodfacts.org/categories.json"
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "LabelLensApp/1.0 (contact@labellens.org) Python-urllib/3.x",
+            "Accept": "application/json"
+        }
+    )
+    
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=8.0) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode('utf-8'))
+                tags = data.get("tags", [])
+                
+                # Filter English categories and any matching noodle/pasta categories with >= 10 products
+                filtered = []
+                for t in tags:
+                    tag_id = t.get("id") or ""
+                    tag_name = t.get("name") or ""
+                    products_count = t.get("products") or 0
+                    
+                    tag_id_lower = tag_id.lower()
+                    tag_name_lower = tag_name.lower()
+                    
+                    is_food_candidate = False
+                    if tag_id_lower.startswith("en:"):
+                        is_food_candidate = True
+                    elif any(term in tag_id_lower or term in tag_name_lower for term in ["noodle", "pasta", "spaghetti", "macaroni"]):
+                        is_food_candidate = True
+                        
+                    if is_food_candidate and products_count >= 10 and tag_name:
+                        filtered.append({
+                            "id": tag_id,
+                            "name": tag_name,
+                            "products": products_count
+                        })
+                
+                # Sort by count descending
+                filtered.sort(key=lambda x: x["products"], reverse=True)
+                
+                # Cache for 24 hours
+                _categories_cache["data"] = filtered
+                _categories_cache["expiry"] = now + (24 * 3600)
+                
+                print(f"[CATEGORIES] Loaded and filtered {len(filtered)} categories from OFF API (Threshold >= 10).")
+                return {"categories": filtered}
+                
+    except Exception as e:
+        print(f"[CATEGORIES] Failed to fetch from OFF categories API: {e}. Using mock fallback.")
+        
+    # 3. Fallback to mock categories (including noodles, instant-noodles, pasta) if the call fails
+    fallback_categories = [
+        {"id": "en:biscuits", "name": "Biscuits", "products": 500},
+        {"id": "en:ketchups", "name": "Ketchup", "products": 500},
+        {"id": "en:fruit-juices", "name": "Juices", "products": 500},
+        {"id": "en:potato-chips", "name": "Chips & Crisps", "products": 500},
+        {"id": "en:chocolates", "name": "Chocolates", "products": 500},
+        {"id": "en:noodles", "name": "Noodles", "products": 300},
+        {"id": "en:instant-noodles", "name": "Instant Noodles", "products": 400},
+        {"id": "en:pastas", "name": "Pasta", "products": 350}
+    ]
+    print(f"[CATEGORIES] Returning {len(fallback_categories)} fallback categories (OFF API unavailable).")
+    return {"categories": fallback_categories}
+
+
+@app.get("/api/search-ingredient")
+async def search_ingredient(query: str, language: str = 'en', db: Session = Depends(get_db)):
+    """
+    Looks up a specific ingredient by name using the 3-layer lookup system.
+    """
+    if not query.strip():
+        raise HTTPException(status_code=400, detail="Query parameter is required")
+        
+    gemini_api_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_api_key:
+        class MockClient:
+            is_mock = True
+        client = MockClient()
+    else:
+        client = genai.Client(api_key=gemini_api_key)
+        
+    try:
+        resolved = lookup_ingredient(db, client, query, language=language)
+        return resolved
+    except Exception as e:
+        print(f"[SEARCH-INGREDIENT] Error searching for '{query}': {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error looking up ingredient: {str(e)}"
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Phase 10: Serve React Frontend Static Assets
+# ──────────────────────────────────────────────────────────────────────
+
+# Calculate absolute path to frontend/dist directory
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
+
+if os.path.exists(frontend_dist):
+    assets_path = os.path.join(frontend_dist, "assets")
+    if os.path.exists(assets_path):
+        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+        print(f"[FRONTEND] Mounted static assets from {assets_path}")
+    else:
+        print(f"[FRONTEND] Warning: Assets folder not found at {assets_path}")
+        
+    @app.get("/{catchall:path}")
+    async def serve_frontend(catchall: str):
+        # Prevent intercepting /api/* calls (safety check)
+        if catchall.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API endpoint not found")
+            
+        # Serve any static files directly inside dist (like favicon.ico) if requested
+        file_path = os.path.join(frontend_dist, catchall)
+        if catchall and os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+            
+        # Serve index.html as fallback for React client router
+        index_path = os.path.join(frontend_dist, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        raise HTTPException(status_code=404, detail="Frontend index.html not found")
+    print(f"[FRONTEND] Catch-all route mounted for index.html at {frontend_dist}")
+else:
+    print(f"[FRONTEND] Warning: dist folder not found at {frontend_dist}. Skipping static files mounting.")
 
 
 # Read host and port from environment variables for deployment safety

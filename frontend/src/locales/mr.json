@@ -28,7 +28,9 @@
     "button": "उत्पादन छायाचित्र अपलोड करा",
     "analyzing": "Gemini सह विश्लेषण होत आहे...",
     "analyzeButton": "घटकांचे विश्लेषण करा",
-    "changePhoto": "वेगळे छायाचित्र निवडा"
+    "changePhoto": "वेगळे छायाचित्र निवडा",
+    "takePhoto": "📷 फोटो घ्या",
+    "chooseGallery": "🖼️ गॅलरीमधून निवडा"
   },
   "errors": {
     "title": "विश्लेषण/अपलोड त्रुटी",
@@ -87,6 +89,7 @@
   "search": {
     "tabScan": "लेबल स्कॅन करा",
     "tabSearch": "उत्पादन शोधा",
+    "tabIngredient": "घटक शोधा",
     "placeholder": "उत्पादन किंवा ब्रँड नावाने शोधा...",
     "button": "शोधा",
     "searching": "शोधत आहे...",

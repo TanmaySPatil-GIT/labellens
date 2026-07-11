@@ -113,7 +113,12 @@ function App() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  // Use relative paths for all API calls so the app works both locally (FastAPI serves
+  // the built frontend) and in production (Render single-service deployment).
+  // VITE_API_URL can still be set during development if you run frontend + backend on
+  // separate ports (e.g. Vite dev server proxying to :8000), but defaults to '' which
+  // means "same origin" — correct for the built, deployed app.
+  const apiUrl = import.meta.env.VITE_API_URL || '';
 
   // System Health Check
   const checkSystemHealth = async () => {

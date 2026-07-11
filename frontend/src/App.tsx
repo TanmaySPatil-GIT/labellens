@@ -145,9 +145,15 @@ function App() {
     }
   };
 
-  const fetchCategories = async () => {
+  const fetchCategories = async (token: string) => {
     try {
-      const response = await fetch(`${apiUrl}/api/categories`);
+      const response = await fetch(`${apiUrl}/api/categories`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.status === 401) {
+        handleSessionExpired();
+        return;
+      }
       if (response.ok) {
         const data = await response.json();
         setCategories(data.categories || []);
@@ -159,7 +165,6 @@ function App() {
 
   useEffect(() => {
     checkSystemHealth();
-    fetchCategories();
   }, []);
 
   useEffect(() => {
@@ -271,13 +276,20 @@ function App() {
       const ingredientNames = ingredients.map((i) => i.ingredient);
       const response = await fetch(`${apiUrl}/api/suggest-alternative`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        },
         body: JSON.stringify({
           product_guess: productGuessArg,
           ingredients: ingredientNames,
           language: currentLang,
         }),
       });
+      if (response.status === 401) {
+        handleSessionExpired();
+        return;
+      }
       const data = await response.json();
       setAlternative({ alternative_name: data.alternative_name, reasons: data.reasons || [] });
     } catch {
@@ -302,6 +314,11 @@ function App() {
         },
         body: JSON.stringify({ raw_text: rawText, language: currentLang }),
       });
+
+      if (response.status === 401) {
+        handleSessionExpired();
+        return;
+      }
 
       const data = await response.json();
 
@@ -355,8 +372,16 @@ function App() {
     try {
       const response = await fetch(`${apiUrl}/api/analyze-image`, {
         method: 'POST',
+        headers: {
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        },
         body: formData,
       });
+
+      if (response.status === 401) {
+        handleSessionExpired();
+        return;
+      }
 
       const data = await response.json();
 
@@ -392,7 +417,15 @@ function App() {
     setSearchResults([]);
 
     try {
-      const response = await fetch(`${apiUrl}/api/search-product?query=${encodeURIComponent(searchQuery.trim())}`);
+      const response = await fetch(`${apiUrl}/api/search-product?query=${encodeURIComponent(searchQuery.trim())}`, {
+        headers: {
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        }
+      });
+      if (response.status === 401) {
+        handleSessionExpired();
+        return;
+      }
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.detail || 'Failed to search products.');
@@ -420,8 +453,17 @@ function App() {
 
     try {
       const response = await fetch(
-        `${apiUrl}/api/search-ingredient?query=${encodeURIComponent(ingredientQuery.trim())}&language=${currentLang}`
+        `${apiUrl}/api/search-ingredient?query=${encodeURIComponent(ingredientQuery.trim())}&language=${currentLang}`,
+        {
+          headers: {
+            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+          }
+        }
       );
+      if (response.status === 401) {
+        handleSessionExpired();
+        return;
+      }
       if (!response.ok) {
         throw new Error('Failed to lookup ingredient. Please try again.');
       }
@@ -458,6 +500,10 @@ function App() {
           ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         }
       });
+      if (response.status === 401) {
+        handleSessionExpired();
+        return;
+      }
       const data = await response.json();
 
       if (!response.ok) {
@@ -505,7 +551,15 @@ function App() {
     setLeaderboard([]);
 
     try {
-      const response = await fetch(`${apiUrl}/api/category-best?category=${encodeURIComponent(category)}`);
+      const response = await fetch(`${apiUrl}/api/category-best?category=${encodeURIComponent(category)}`, {
+        headers: {
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        }
+      });
+      if (response.status === 401) {
+        handleSessionExpired();
+        return;
+      }
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.detail || 'Failed to fetch category rankings.');
@@ -524,6 +578,15 @@ function App() {
     fetchCategoryLeaderboard(val);
   };
 
+  const handleSessionExpired = () => {
+    setAuthToken(null);
+    setUserName(null);
+    setUserHistory([]);
+    setUserFavorites([]);
+    setAuthError("Your session has expired. Please log in again.");
+    setAuthTab("login");
+  };
+
   // Phase 9 Auth & Data Logic
   const fetchHistory = async (token: string) => {
     setLoadingHistory(true);
@@ -531,6 +594,10 @@ function App() {
       const response = await fetch(`${apiUrl}/api/history`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (response.status === 401) {
+        handleSessionExpired();
+        return;
+      }
       const data = await response.json();
       if (response.ok) {
         setUserHistory(data.history || []);
@@ -548,6 +615,10 @@ function App() {
       const response = await fetch(`${apiUrl}/api/favorites`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (response.status === 401) {
+        handleSessionExpired();
+        return;
+      }
       const data = await response.json();
       if (response.ok) {
         setUserFavorites(data.favorites || []);
@@ -641,6 +712,7 @@ function App() {
       // Load user data
       fetchHistory(data.access_token);
       fetchFavorites(data.access_token);
+      fetchCategories(data.access_token);
     } catch (err: any) {
       setAuthError(err.message || 'Authentication error.');
     } finally {
@@ -663,6 +735,177 @@ function App() {
     setLanguage(lang);
     setLangOpen(false);
   };
+
+  if (!authToken) {
+    return (
+      <div className="min-h-screen bg-brand-mint flex flex-col font-sans">
+        {/* Navigation Header */}
+        <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-teal-100 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-teal to-brand-green flex items-center justify-center text-white font-bold text-xl shadow-md shadow-teal-100">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <span className="font-extrabold text-2xl tracking-tight bg-gradient-to-r from-brand-teal to-brand-green bg-clip-text text-transparent">
+                  LabelLens
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              {/* Language Selector */}
+              <div className="relative">
+                <button
+                  id="lang-selector-btn"
+                  onClick={() => setLangOpen((o) => !o)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-white border border-teal-200 hover:border-brand-teal rounded-full text-xs font-semibold text-slate-700 hover:text-brand-teal transition focus:outline-none shadow-sm"
+                  aria-haspopup="listbox"
+                  aria-expanded={langOpen}
+                >
+                  <svg className="w-3.5 h-3.5 text-brand-teal" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                  </svg>
+                  <span>{LANG_LABELS[currentLang]}</span>
+                  <svg className={`w-3 h-3 transition-transform ${langOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {langOpen && (
+                  <div className="absolute right-0 mt-2 w-36 bg-white border border-teal-100 rounded-xl shadow-lg py-1 z-50 animate-fadeIn">
+                    {SUPPORTED_LANGS.map((lang) => (
+                      <button
+                        key={lang}
+                        id={`lang-option-${lang}`}
+                        onClick={() => handleLangChange(lang)}
+                        className={`w-full text-left px-4 py-2 text-sm font-medium transition-colors ${
+                          currentLang === lang
+                            ? 'bg-teal-50 text-brand-teal font-bold'
+                            : 'text-slate-700 hover:bg-teal-50/50 hover:text-brand-teal'
+                        }`}
+                      >
+                        {LANG_LABELS[lang]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Welcome Landing screen content */}
+        <main className="flex-grow flex items-center justify-center p-6">
+          <div className="w-full max-w-md bg-white rounded-3xl border border-teal-100 shadow-2xl p-8 flex flex-col animate-slideUp">
+            
+            {/* Branding and Tagline */}
+            <div className="text-center mb-8">
+              <div className="inline-flex w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-teal to-brand-green items-center justify-center text-white font-bold text-3xl shadow-lg shadow-teal-100 mb-4">
+                <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h2 className="text-3xl font-black text-slate-800 tracking-tight leading-none mb-2">
+                LabelLens
+              </h2>
+              <p className="text-sm font-semibold text-slate-500 uppercase tracking-widest">
+                Scan. Know. Eat Safe.
+              </p>
+            </div>
+
+            {/* Toggle tabs */}
+            <div className="flex border-b border-slate-100 mb-6">
+              <button
+                type="button"
+                onClick={() => { setAuthTab('login'); setAuthError(null); }}
+                className={`flex-1 pb-3 text-sm font-bold transition-all border-b-2 text-center focus:outline-none ${
+                  authTab === 'login' ? 'border-brand-teal text-brand-teal' : 'border-transparent text-slate-400 hover:text-slate-700'
+                }`}
+              >
+                Log In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthTab('signup'); setAuthError(null); }}
+                className={`flex-1 pb-3 text-sm font-bold transition-all border-b-2 text-center focus:outline-none ${
+                  authTab === 'signup' ? 'border-brand-teal text-brand-teal' : 'border-transparent text-slate-400 hover:text-slate-700'
+                }`}
+              >
+                Sign Up
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={authSubmit} className="space-y-4">
+              {authTab === 'signup' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    value={authName}
+                    onChange={(e) => setAuthName(e.target.value)}
+                    required
+                    placeholder="Enter your name"
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 focus:border-brand-teal rounded-xl text-sm outline-none text-slate-800 transition"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  required
+                  placeholder="name@example.com"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 focus:border-brand-teal rounded-xl text-sm outline-none text-slate-800 transition"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label>
+                <input
+                  type="password"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 focus:border-brand-teal rounded-xl text-sm outline-none text-slate-800 transition"
+                />
+              </div>
+
+              {authError && (
+                <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs font-semibold text-rose-800 flex items-center space-x-2 animate-fadeIn">
+                  <span>⚠️</span>
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full py-3 bg-gradient-to-tr from-brand-teal to-brand-green hover:opacity-90 disabled:opacity-60 text-white font-extrabold rounded-xl transition shadow-md hover:shadow-lg focus:outline-none flex items-center justify-center space-x-2 text-sm"
+              >
+                {authLoading ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <span>{authTab === 'login' ? 'Log In' : 'Sign Up'}</span>
+                )}
+              </button>
+            </form>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-brand-mint flex flex-col font-sans">
@@ -1190,26 +1433,11 @@ function App() {
             )}
 
             {activeTab === 'history' && (
-              <div className="flex flex-col h-full">
+              <div className="flex flex-col h-full animate-fadeIn">
                 <h2 className="text-2xl font-bold text-slate-800 mb-2">📜 Scan History</h2>
                 <p className="text-sm text-slate-500 mb-6">Your recently analyzed food labels.</p>
 
-                {!authToken ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-center animate-fadeIn">
-                    <span className="text-4xl mb-4">🔒</span>
-                    <h3 className="text-base font-extrabold text-slate-800 mb-2">Login to save your scan history</h3>
-                    <p className="text-xs text-slate-500 max-w-sm mb-6">Create a free account or login to automatically sync and save all your scanned products.</p>
-                    <button
-                      onClick={() => {
-                        setAuthTab('login');
-                        setShowAuthModal(true);
-                      }}
-                      className="px-6 py-2.5 bg-brand-teal hover:bg-teal-700 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow focus:outline-none"
-                    >
-                      Login Now
-                    </button>
-                  </div>
-                ) : loadingHistory ? (
+                {loadingHistory ? (
                   <div className="flex justify-center py-12">
                     <svg className="animate-spin h-8 w-8 text-brand-teal" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -1260,26 +1488,11 @@ function App() {
             )}
 
             {activeTab === 'favorites' && (
-              <div className="flex flex-col h-full">
+              <div className="flex flex-col h-full animate-fadeIn">
                 <h2 className="text-2xl font-bold text-slate-800 mb-2">❤️ Favorites</h2>
                 <p className="text-sm text-slate-500 mb-6">Your collection of healthy or saved food items.</p>
 
-                {!authToken ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-center animate-fadeIn">
-                    <span className="text-4xl mb-4">🔒</span>
-                    <h3 className="text-base font-extrabold text-slate-800 mb-2">Login to save your favorites</h3>
-                    <p className="text-xs text-slate-500 max-w-sm mb-6">Create a free account or login to automatically sync and save all your favorite products.</p>
-                    <button
-                      onClick={() => {
-                        setAuthTab('login');
-                        setShowAuthModal(true);
-                      }}
-                      className="px-6 py-2.5 bg-brand-teal hover:bg-teal-700 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow focus:outline-none"
-                    >
-                      Login Now
-                    </button>
-                  </div>
-                ) : loadingFavorites ? (
+                {loadingFavorites ? (
                   <div className="flex justify-center py-12">
                     <svg className="animate-spin h-8 w-8 text-brand-teal" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -1475,7 +1688,7 @@ function App() {
                   {(() => {
                     const filtered = categories.filter(c =>
                       c.name.toLowerCase().includes(categorySearch.toLowerCase())
-                    );
+                    ).slice(0, 200);
                     
                     if (filtered.length === 0) {
                       return (

@@ -117,6 +117,74 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="LabelLens API", version="0.1.0", lifespan=lifespan)
 
+# ──────────────────────────────────────────────────────────────────────
+# Phase 9: User Authentication, Hashing, and JWT Tokens Setup
+# ──────────────────────────────────────────────────────────────────────
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer()
+security_optional = HTTPBearer(auto_error=False)
+
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise ValueError("JWT_SECRET environment variable is not set")
+    
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 1 day
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)) -> models.User:
+    token = credentials.credentials
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+        
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+def get_current_user_optional(credentials: HTTPAuthorizationCredentials | None = Depends(security_optional), db: Session = Depends(get_db)) -> models.User | None:
+    if not credentials:
+        return None
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            return None
+        user = db.query(models.User).filter(models.User.email == email).first()
+        return user
+    except JWTError:
+        return None
+
+
+
+
 # Configure CORS origins
 # Allow localhost origins (default Vite port is 5173)
 origins = [
@@ -180,7 +248,7 @@ def detect_blur(image_bytes: bytes, threshold: float = 30.0) -> tuple[bool, floa
     return variance < threshold, variance
 
 @app.post("/api/analyze-image")
-async def analyze_image(file: UploadFile = File(...)):
+async def analyze_image(file: UploadFile = File(...), user: models.User = Depends(get_current_user)):
     """
     Validates the uploaded file size and content type,
     performs blur check via OpenCV, and uses Gemini Vision API
@@ -275,72 +343,6 @@ async def analyze_image(file: UploadFile = File(...)):
             detail="AI analysis failed. Please try again in a moment."
         )
 
-# ──────────────────────────────────────────────────────────────────────
-# Phase 9: User Authentication, Hashing, and JWT Tokens Setup
-# ──────────────────────────────────────────────────────────────────────
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
-security_optional = HTTPBearer(auto_error=False)
-
-JWT_SECRET = os.getenv("JWT_SECRET")
-if not JWT_SECRET:
-    raise ValueError("JWT_SECRET environment variable is not set")
-    
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 1 day
-
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=ALGORITHM)
-    return encoded_jwt
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)) -> models.User:
-    token = credentials.credentials
-    credentials_exception = HTTPException(
-        status_code=401,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-        
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if user is None:
-        raise credentials_exception
-    return user
-
-def get_current_user_optional(credentials: HTTPAuthorizationCredentials | None = Depends(security_optional), db: Session = Depends(get_db)) -> models.User | None:
-    if not credentials:
-        return None
-    token = credentials.credentials
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            return None
-        user = db.query(models.User).filter(models.User.email == email).first()
-        return user
-    except JWTError:
-        return None
-
-
 from pydantic import BaseModel
 
 class ParseIngredientsRequest(BaseModel):
@@ -348,7 +350,7 @@ class ParseIngredientsRequest(BaseModel):
     language: str = 'en'  # 'en', 'hi', 'mr'
 
 @app.post("/api/parse-ingredients")
-async def parse_ingredients(payload: ParseIngredientsRequest, db = Depends(get_db), user_optional: models.User | None = Depends(get_current_user_optional)):
+async def parse_ingredients(payload: ParseIngredientsRequest, db = Depends(get_db), user: models.User = Depends(get_current_user)):
     """
     Endpoint that splits raw text into individual ingredients, matches them
     using the 3-layer lookup system, calculates a weighted health score,
@@ -394,23 +396,22 @@ async def parse_ingredients(payload: ParseIngredientsRequest, db = Depends(get_d
         # 4. Classify product guess
         product_guess = guess_product_from_ingredients(results)
         
-        # 5. Save to history if logged in
-        if user_optional:
-            try:
-                hist = models.ScanHistory(
-                    user_id=user_optional.id,
-                    product_name=product_guess,
-                    product_guess=product_guess,
-                    overall_score=overall_score,
-                    score_label=score_label,
-                    ingredients_data=results
-                )
-                db.add(hist)
-                db.commit()
-                print(f"[HISTORY] Successfully saved scan for user {user_optional.email}")
-            except Exception as hist_err:
-                db.rollback()
-                print(f"[HISTORY] Error saving scan: {hist_err}")
+        # 5. Save to history (user is always authenticated now)
+        try:
+            hist = models.ScanHistory(
+                user_id=user.id,
+                product_name=product_guess,
+                product_guess=product_guess,
+                overall_score=overall_score,
+                score_label=score_label,
+                ingredients_data=results
+            )
+            db.add(hist)
+            db.commit()
+            print(f"[HISTORY] Successfully saved scan for user {user.email}")
+        except Exception as hist_err:
+            db.rollback()
+            print(f"[HISTORY] Error saving scan: {hist_err}")
                 
         return {
             "ingredients": results,
@@ -499,7 +500,7 @@ def _call_gemini_for_alternative(client, product_guess: str, ingredients: list[s
 
 
 @app.post("/api/suggest-alternative")
-async def suggest_alternative(payload: SuggestAlternativeRequest):
+async def suggest_alternative(payload: SuggestAlternativeRequest, user: models.User = Depends(get_current_user)):
     """
     Calls Gemini to suggest a healthier packaged food alternative available in India.
 
@@ -546,192 +547,58 @@ async def suggest_alternative(payload: SuggestAlternativeRequest):
 # ──────────────────────────────────────────────────────────────────────
 
 _CATEGORY_MOCK_DATA = {
-    "biscuits": [
-        {
-            "name": "Britannia Marie Gold",
-            "brand": "Britannia",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/106/301/5395/front_en.12.400.jpg",
-            "code": "8901063015395",
-            "ingredients_text": "Wheat Flour, Sugar, Refined Palm Oil, Invert Sugar Syrup, Milk Solids, Iodised Salt, Raising Agents (INS 500ii, INS 503ii), Emulsifiers (Soy Lecithin, INS 471), Citric Acid"
-        },
-        {
-            "name": "McVitie's Digestive",
-            "brand": "McVitie's",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/500/016/800/1007/front_en.59.400.jpg",
-            "code": "5000168001007",
-            "ingredients_text": "Wheat Flour, Whole Wheat Flour, Vegetable Oil, Sugar, Malt Extract, Invert Sugar Syrup, Raising Agents, Salt, Malic Acid"
-        },
-        {
-            "name": "Oreo Chocolate Creme Biscuits",
-            "brand": "Oreo",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/762/221/044/9283/front_en.11.400.jpg",
-            "code": "7622210449283",
-            "ingredients_text": "Refined Wheat Flour, Sugar, Refined Palm Oil, Cocoa Powder, High Fructose Corn Syrup, Raising Agents, Salt, Soy Lecithin, Artificial Flavouring Substance"
-        },
-        {
-            "name": "Sunfeast Dark Fantasy Choco Fills",
-            "brand": "Sunfeast",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/172/518/1225/front_en.21.400.jpg",
-            "code": "8901725181225",
-            "ingredients_text": "Refined Wheat Flour, Choco Filling (Sugar, Refined Palm Oil, Cocoa Solids, Soy Lecithin), Refined Palm Oil, Sugar, Cocoa Solids, Invert Sugar Syrup, Liquid Glucose, Raising Agents, Salt, Soy Lecithin, Artificial Vanilla Flavour"
-        }
-    ],
-    "ketchup": [
-        {
-            "name": "Heinz Tomato Ketchup",
-            "brand": "Heinz",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/001/300/000/6403/front_en.35.400.jpg",
-            "code": "0013000006403",
-            "ingredients_text": "Tomato Concentrate from Red Ripe Tomatoes, Distilled Vinegar, High Fructose Corn Syrup, Salt, Spice, Onion Powder, Natural Flavoring"
-        },
-        {
-            "name": "Maggi Tomato Ketchup",
-            "brand": "Maggi",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/105/800/2287/front_en.15.400.jpg",
-            "code": "8901058002287",
-            "ingredients_text": "Tomato Paste, Sugar, Water, Salt, Acidity Regulator (INS 260), Thickener (INS 415), Preservative (INS 211), Onion, Garlic, Spices"
-        },
-        {
-            "name": "Kissan Fresh Tomato Ketchup",
-            "brand": "Kissan",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/103/034/1859/front_en.24.400.jpg",
-            "code": "8901030341859",
-            "ingredients_text": "Tomato Paste, Water, Sugar, Liquid Glucose, Salt, Acidity Regulator (INS 260), Thickeners (INS 1422, INS 415), Preservative (INS 211), Onion Powder, Garlic Powder, Spices"
-        }
-    ],
-    "juice": [
-        {
-            "name": "Real Fruit Power Orange Juice",
-            "brand": "Dabur",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/120/700/0394/front_en.14.400.jpg",
-            "code": "8901207000394",
-            "ingredients_text": "Water, Orange Juice Concentrate, Sugar, Acidity Regulator (INS 330), Stabilizer (INS 440), Vitamin C"
-        },
-        {
-            "name": "Tropicana 100% Orange Juice",
-            "brand": "Tropicana",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/208/300/1086/front_en.18.400.jpg",
-            "code": "8902083001086",
-            "ingredients_text": "Orange Juice Concentrate, Water"
-        },
-        {
-            "name": "Raw Pressery Valencia Orange Juice",
-            "brand": "Raw Pressery",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/606/703/0146/front_en.10.400.jpg",
-            "code": "8906067030146",
-            "ingredients_text": "Valencia Orange Juice"
-        },
-        {
-            "name": "Minute Maid Pulpy Orange",
-            "brand": "Minute Maid",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/176/406/1151/front_en.23.400.jpg",
-            "code": "8901764061151",
-            "ingredients_text": "Water, Sugar, Orange Juice Concentrate, Orange Pulp, Acidity Regulator (INS 330), Antioxidant (INS 300)"
-        }
-    ],
-    "chips": [
-        {
-            "name": "Lay's Classic Salted",
-            "brand": "Lay's",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/149/110/1838/front_en.28.400.jpg",
-            "code": "8901491101838",
-            "ingredients_text": "Potato, Refined Palm Oil, Salt"
-        },
-        {
-            "name": "Pringles Sour Cream & Onion",
-            "brand": "Pringles",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/389/000/015/9985/front_en.59.400.jpg",
-            "code": "3890000159985",
-            "ingredients_text": "Dried Potatoes, Vegetable Oil, Corn Flour, Wheat Starch, Maltodextrin, Emulsifier (INS 471), Salt, Whey, Dextrose, Monosodium Glutamate, Coconut Oil, Yeast Extract, Citric Acid"
-        },
-        {
-            "name": "Too Yumm Karare Veggie Stix",
-            "brand": "Too Yumm",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/609/057/0275/front_en.19.400.jpg",
-            "code": "8906090570275",
-            "ingredients_text": "Rice Flour, Corn Flour, Palm Oil, Spices, Salt, Acidity Regulator (INS 330), Stabilizer (INS 412)"
-        }
-    ],
-    "chocolates": [
-        {
-            "name": "Amul Dark Chocolate",
-            "brand": "Amul",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/126/207/0400/front_en.24.400.jpg",
-            "code": "8901262070400",
-            "ingredients_text": "Sugar, Cocoa Solids, Cocoa Butter, Permitted Emulsifiers (INS 322, INS 476), Ethyl Vanillin"
-        },
-        {
-            "name": "Cadbury Dairy Milk",
-            "brand": "Cadbury",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/762/220/114/0168/front_en.38.400.jpg",
-            "code": "7622201140168",
-            "ingredients_text": "Sugar, Milk Solids, Cocoa Butter, Cocoa Solids, Emulsifiers (INS 442, INS 476), Ethyl Vanillin"
-        }
-    ],
-    "noodles": [
-        {
-            "name": "Maggi 2-Minute Masala Noodles",
-            "brand": "Maggi",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/105/889/5476/front_en.11.400.jpg",
-            "code": "8901058895476",
-            "ingredients_text": "Wheat Flour, Palm Oil, Salt, Wheat Gluten, Potassium Chloride, Gelling Agent (INS 508), Raising Agent (INS 500ii), Humectant (INS 451i), Coriander, Chilli, Turmeric, Cumin, Aniseed, Fenugreek, Ginger, Black Pepper, Clove, Nutmeg, Cardamom, Monosodium Glutamate, Citric Acid"
-        },
-        {
-            "name": "Yippee Magic Masala Noodles",
-            "brand": "Sunfeast",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/172/519/8124/front_en.15.400.jpg",
-            "code": "8901725198124",
-            "ingredients_text": "Wheat Flour, Refined Palm Oil, Iodised Salt, Wheat Gluten, Calcium Carbonate, Gelling Agent (INS 508), Humectant (INS 451i), Spices, Sugar, Garlic Powder, Onion Powder, Monosodium Glutamate, Yeast Extract"
-        }
-    ],
-    "instant-noodles": [
-        {
-            "name": "Maggi 2-Minute Masala Noodles",
-            "brand": "Maggi",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/105/889/5476/front_en.11.400.jpg",
-            "code": "8901058895476",
-            "ingredients_text": "Wheat Flour, Palm Oil, Salt, Wheat Gluten, Potassium Chloride, Gelling Agent (INS 508), Raising Agent (INS 500ii), Humectant (INS 451i), Coriander, Chilli, Turmeric, Cumin, Aniseed, Fenugreek, Ginger, Black Pepper, Clove, Nutmeg, Cardamom, Monosodium Glutamate, Citric Acid"
-        },
-        {
-            "name": "Yippee Magic Masala Noodles",
-            "brand": "Sunfeast",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/172/519/8124/front_en.15.400.jpg",
-            "code": "8901725198124",
-            "ingredients_text": "Wheat Flour, Refined Palm Oil, Iodised Salt, Wheat Gluten, Calcium Carbonate, Gelling Agent (INS 508), Humectant (INS 451i), Spices, Sugar, Garlic Powder, Onion Powder, Monosodium Glutamate, Yeast Extract"
-        }
-    ],
-    "pasta": [
-        {
-            "name": "Bambino Macaroni Pasta",
-            "brand": "Bambino",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/124/810/0075/front_en.5.400.jpg",
-            "code": "8901248100075",
-            "ingredients_text": "Semolina, Durum Wheat Semolina"
-        },
-        {
-            "name": "YiPPee Tricolor Pasta Masala",
-            "brand": "Sunfeast",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/172/510/3463/front_en.12.400.jpg",
-            "code": "8901725103463",
-            "ingredients_text": "Semolina, Wheat Gluten, Spices, Sugar, Iodised Salt, Dehydrated Vegetables, Hydrolyzed Vegetable Protein, Citric Acid"
-        }
-    ],
-    "pastas": [
-        {
-            "name": "Bambino Macaroni Pasta",
-            "brand": "Bambino",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/124/810/0075/front_en.5.400.jpg",
-            "code": "8901248100075",
-            "ingredients_text": "Semolina, Durum Wheat Semolina"
-        },
-        {
-            "name": "YiPPee Tricolor Pasta Masala",
-            "brand": "Sunfeast",
-            "image_thumb_url": "https://images.openfoodfacts.org/images/products/890/172/510/3463/front_en.12.400.jpg",
-            "code": "8901725103463",
-            "ingredients_text": "Semolina, Wheat Gluten, Spices, Sugar, Iodised Salt, Dehydrated Vegetables, Hydrolyzed Vegetable Protein, Citric Acid"
-        }
-    ]
+    'biscuits': [{'name': 'Britannia Marie Gold', 'brand': 'Britannia', 'image_thumb_url': '', 'code': '8901063015395', 'ingredients_text': 'Wheat Flour, Sugar, Refined Palm Oil, Invert Sugar Syrup, Milk Solids, Iodised Salt, Raising Agents (INS 500ii, INS 503ii), Emulsifiers (Soy Lecithin, INS 471), Citric Acid'}, {'name': "McVitie's Digestive", 'brand': "McVitie's", 'image_thumb_url': '', 'code': '5000168001007', 'ingredients_text': 'Wheat Flour, Whole Wheat Flour, Vegetable Oil, Sugar, Malt Extract, Invert Sugar Syrup, Raising Agents, Salt, Malic Acid'}, {'name': 'Oreo Chocolate Creme Biscuits', 'brand': 'Oreo', 'image_thumb_url': '', 'code': '7622210449283', 'ingredients_text': 'Refined Wheat Flour, Sugar, Refined Palm Oil, Cocoa Powder, High Fructose Corn Syrup, Raising Agents, Salt, Soy Lecithin, Artificial Flavouring Substance'}, {'name': 'Sunfeast Dark Fantasy Choco Fills', 'brand': 'Sunfeast', 'image_thumb_url': '', 'code': '8901725181225', 'ingredients_text': 'Refined Wheat Flour, Choco Filling (Sugar, Refined Palm Oil, Cocoa Solids, Soy Lecithin), Refined Palm Oil, Sugar, Cocoa Solids, Invert Sugar Syrup, Liquid Glucose, Raising Agents, Salt, Soy Lecithin, Artificial Vanilla Flavour'}],
+    'cookies': [{'name': 'Good Day Cashew Cookies', 'brand': 'Britannia', 'image_thumb_url': '', 'code': '8901063016255', 'ingredients_text': 'Wheat Flour, Sugar, Palm Oil, Cashew Bits, Invert Sugar Syrup, Butter, Iodised Salt, Emulsifiers, Raising Agents'}, {'name': 'Unibic Chocofills Cookies', 'brand': 'Unibic', 'image_thumb_url': '', 'code': '8906002213764', 'ingredients_text': 'Wheat Flour, Sugar, Hydrogenated Vegetable Oil, Cocoa Powder, Milk Solids, Emulsifiers, Raising Agents'}, {'name': 'Parle-G Gold Biscuits', 'brand': 'Parle', 'image_thumb_url': '', 'code': '8901719102434', 'ingredients_text': 'Wheat Flour, Sugar, Refined Palm Oil, Invert Sugar Syrup, Milk Solids, Iodised Salt, Raising Agents, Emulsifiers'}],
+    'potato-chips': [{'name': "Lay's Classic Salted", 'brand': "Lay's", 'image_thumb_url': '', 'code': '8901491101838', 'ingredients_text': 'Potato, Refined Palm Oil, Salt'}, {'name': 'Pringles Sour Cream & Onion', 'brand': 'Pringles', 'image_thumb_url': '', 'code': '3890000159985', 'ingredients_text': 'Dried Potatoes, Vegetable Oil, Corn Flour, Wheat Starch, Maltodextrin, Emulsifier (INS 471), Salt, Whey, Dextrose, Monosodium Glutamate, Coconut Oil, Yeast Extract, Citric Acid'}, {'name': 'Too Yumm Karare Veggie Stix', 'brand': 'Too Yumm', 'image_thumb_url': '', 'code': '8906090570275', 'ingredients_text': 'Rice Flour, Corn Flour, Palm Oil, Spices, Salt, Acidity Regulator (INS 330), Stabilizer (INS 412)'}],
+    'chips': [{'name': "Lay's Classic Salted", 'brand': "Lay's", 'image_thumb_url': '', 'code': '8901491101838', 'ingredients_text': 'Potato, Refined Palm Oil, Salt'}, {'name': 'Balaji Wafers Simply Salted', 'brand': 'Balaji', 'image_thumb_url': '', 'code': '8906007410052', 'ingredients_text': 'Potatoes, Edible Vegetable Oil, Iodised Salt'}, {'name': "Haldiram's Alooo Bhujia", 'brand': 'Haldiram', 'image_thumb_url': '', 'code': '8904063200111', 'ingredients_text': 'Potatoes, Tepary Beans Flour, Edible Vegetable Oil, Chickpea Flour, Salt, Coriander Powder, Cumin Powder, Ginger Powder'}],
+    'chocolates': [{'name': 'Amul Dark Chocolate', 'brand': 'Amul', 'image_thumb_url': '', 'code': '8901262070400', 'ingredients_text': 'Sugar, Cocoa Solids, Cocoa Butter, Permitted Emulsifiers (INS 322, INS 476), Ethyl Vanillin'}, {'name': 'Cadbury Dairy Milk', 'brand': 'Cadbury', 'image_thumb_url': '', 'code': '7622201140168', 'ingredients_text': 'Sugar, Milk Solids, Cocoa Butter, Cocoa Solids, Emulsifiers (INS 442, INS 476), Ethyl Vanillin'}, {'name': 'Nestle KitKat Share Bag', 'brand': 'Nestle', 'image_thumb_url': '', 'code': '8901058863611', 'ingredients_text': 'Milk Chocolate (Sugar, Milk Solids, Cocoa Butter, Cocoa Solids, Emulsifiers), Wafer (Refined Wheat Flour, Sugar, Hydrogenated Vegetable Fats)'}],
+    'ketchups': [{'name': 'Heinz Tomato Ketchup', 'brand': 'Heinz', 'image_thumb_url': '', 'code': '0013000006403', 'ingredients_text': 'Tomato Concentrate from Red Ripe Tomatoes, Distilled Vinegar, High Fructose Corn Syrup, Salt, Spice, Onion Powder, Natural Flavoring'}, {'name': 'Maggi Tomato Ketchup', 'brand': 'Maggi', 'image_thumb_url': '', 'code': '8901058002287', 'ingredients_text': 'Tomato Paste, Sugar, Water, Salt, Acidity Regulator (INS 260), Thickener (INS 415), Preservative (INS 211), Onion, Garlic, Spices'}, {'name': 'Kissan Fresh Tomato Ketchup', 'brand': 'Kissan', 'image_thumb_url': '', 'code': '8901030341859', 'ingredients_text': 'Tomato Paste, Water, Sugar, Liquid Glucose, Salt, Acidity Regulator (INS 260), Thickeners (INS 1422, INS 415), Preservative (INS 211), Onion Powder, Garlic Powder, Spices'}],
+    'ketchup': [{'name': 'Heinz Tomato Ketchup', 'brand': 'Heinz', 'image_thumb_url': '', 'code': '0013000006403', 'ingredients_text': 'Tomato Concentrate, Distilled Vinegar, High Fructose Corn Syrup, Salt, Spice'}, {'name': 'Maggi Tomato Ketchup', 'brand': 'Maggi', 'image_thumb_url': '', 'code': '8901058002287', 'ingredients_text': 'Tomato Paste, Sugar, Water, Salt, Acidity Regulator (INS 260)'}],
+    'fruit-juices': [{'name': 'Real Fruit Power Orange Juice', 'brand': 'Dabur', 'image_thumb_url': '', 'code': '8901207000394', 'ingredients_text': 'Water, Orange Juice Concentrate, Sugar, Acidity Regulator (INS 330), Stabilizer (INS 440), Vitamin C'}, {'name': 'Tropicana 100% Orange Juice', 'brand': 'Tropicana', 'image_thumb_url': '', 'code': '8902083001086', 'ingredients_text': 'Orange Juice Concentrate, Water'}, {'name': 'Raw Pressery Valencia Orange Juice', 'brand': 'Raw Pressery', 'image_thumb_url': '', 'code': '8906067030146', 'ingredients_text': 'Valencia Orange Juice'}],
+    'juice': [{'name': 'Real Orange Juice', 'brand': 'Dabur', 'image_thumb_url': '', 'code': '8901207000394', 'ingredients_text': 'Water, Orange Juice Concentrate, Sugar, Acidity Regulator (INS 330)'}, {'name': 'Minute Maid Pulpy Orange', 'brand': 'Minute Maid', 'image_thumb_url': '', 'code': '8901764061151', 'ingredients_text': 'Water, Sugar, Orange Juice Concentrate, Orange Pulp, Acidity Regulator (INS 330)'}],
+    'instant-noodles': [{'name': 'Maggi 2-Minute Masala Noodles', 'brand': 'Maggi', 'image_thumb_url': '', 'code': '8901058895476', 'ingredients_text': 'Wheat Flour, Palm Oil, Salt, Wheat Gluten, Potassium Chloride, Gelling Agent (INS 508), Raising Agent (INS 500ii), Humectant (INS 451i), Coriander, Chilli, Turmeric, Cumin, Aniseed, Fenugreek, Ginger, Black Pepper, Clove, Nutmeg, Cardamom, Monosodium Glutamate, Citric Acid'}, {'name': 'Yippee Magic Masala Noodles', 'brand': 'Sunfeast', 'image_thumb_url': '', 'code': '8901725198124', 'ingredients_text': 'Wheat Flour, Refined Palm Oil, Iodised Salt, Wheat Gluten, Calcium Carbonate, Gelling Agent (INS 508), Humectant (INS 451i), Spices, Sugar, Garlic Powder, Onion Powder, Monosodium Glutamate, Yeast Extract'}, {'name': "Ching's Secret Schezwan Instant Noodles", 'brand': "Ching's", 'image_thumb_url': '', 'code': '8901595861423', 'ingredients_text': 'Wheat Flour, Refined Palm Oil, Salt, Gelling Agent (INS 508), Wheat Gluten, Sodium Polyphosphate, Soy Sauce, Schezwan Seasoning'}],
+    'noodles': [{'name': 'Maggi 2-Minute Masala Noodles', 'brand': 'Maggi', 'image_thumb_url': '', 'code': '8901058895476', 'ingredients_text': 'Wheat Flour, Palm Oil, Salt, Wheat Gluten, Spices, Monosodium Glutamate'}, {'name': 'Nissin Top Ramen Curry Noodles', 'brand': 'Top Ramen', 'image_thumb_url': '', 'code': '8901063142145', 'ingredients_text': 'Wheat Flour, Edible Vegetable Oil, Iodised Salt, Wheat Gluten, Spices, Thickener, Acidity Regulator'}],
+    'pastas': [{'name': 'Bambino Macaroni Pasta', 'brand': 'Bambino', 'image_thumb_url': '', 'code': '8901248100075', 'ingredients_text': 'Semolina, Durum Wheat Semolina'}, {'name': 'YiPPee Tricolor Pasta Masala', 'brand': 'Sunfeast', 'image_thumb_url': '', 'code': '8901725103463', 'ingredients_text': 'Semolina, Wheat Gluten, Spices, Sugar, Iodised Salt, Dehydrated Vegetables, Hydrolyzed Vegetable Protein, Citric Acid'}, {'name': 'Maggi Pazzta Cheese Macaroni', 'brand': 'Maggi', 'image_thumb_url': '', 'code': '8901058890044', 'ingredients_text': 'Semolina (Durum Wheat), Milk Solids, Cheese Powder, Refined Wheat Flour, Palm Oil, Salt, Sugar, Dehydrated Sweet Corn'}],
+    'pasta': [{'name': 'Bambino Macaroni Pasta', 'brand': 'Bambino', 'image_thumb_url': '', 'code': '8901248100075', 'ingredients_text': 'Semolina, Durum Wheat Semolina'}, {'name': 'Maggi Pazzta Tomato Twist', 'brand': 'Maggi', 'image_thumb_url': '', 'code': '8901058890051', 'ingredients_text': 'Semolina (Durum Wheat), Tomato Paste, Sugar, Palm Oil, Iodised Salt, Dehydrated Vegetables, Spices'}],
+    'breakfast-cereals': [{'name': "Kellogg's Corn Flakes", 'brand': "Kellogg's", 'image_thumb_url': '', 'code': '8901000000013', 'ingredients_text': 'Corn, Sugar, Barley Malt Extract, Iodised Salt, Vitamin C, Iron'}, {'name': "Kellogg's Chocos", 'brand': "Kellogg's", 'image_thumb_url': '', 'code': '8901000000014', 'ingredients_text': 'Wheat Flour, Sugar, Cocoa Powder, Wheat Starch, Refined Palm Oil'}, {'name': 'Saffola Masala Oats', 'brand': 'Saffola', 'image_thumb_url': '', 'code': '8901000000015', 'ingredients_text': 'Rolled Oats, Spices & Condiments, Salt, Dehydrated Vegetables, Hydrolyzed Vegetable Protein'}],
+    'dairy': [{'name': 'Amul Taaza Toned Milk', 'brand': 'Amul', 'image_thumb_url': '', 'code': '8901000000014', 'ingredients_text': 'Toned Milk, Vitamin A, Vitamin D'}, {'name': 'Mother Dairy Full Cream Milk', 'brand': 'Mother', 'image_thumb_url': '', 'code': '8901000000015', 'ingredients_text': 'Full Cream Milk'}, {'name': 'Nestle a+ Slim Dahi', 'brand': 'Nestle', 'image_thumb_url': '', 'code': '8901000000016', 'ingredients_text': 'Double Toned Milk, Active Culture'}],
+    'milks': [{'name': 'Amul Taaza Toned Milk', 'brand': 'Amul', 'image_thumb_url': '', 'code': '8901000000015', 'ingredients_text': 'Toned Milk, Vitamin A, Vitamin D'}, {'name': 'Mother Dairy Full Cream Milk', 'brand': 'Mother', 'image_thumb_url': '', 'code': '8901000000016', 'ingredients_text': 'Full Cream Milk'}, {'name': 'Nestle a+ Slim Dahi', 'brand': 'Nestle', 'image_thumb_url': '', 'code': '8901000000017', 'ingredients_text': 'Double Toned Milk, Active Culture'}],
+    'ice-creams': [{'name': "Kwality Wall's Vanilla", 'brand': 'Kwality', 'image_thumb_url': '', 'code': '8901000000016', 'ingredients_text': 'Water, Sugar, Milk Solids, Vegetable Protein, Emulsifier, Stabilizer, Vanilla Flavour'}, {'name': 'Amul Vanilla Gold Ice Cream', 'brand': 'Amul', 'image_thumb_url': '', 'code': '8901000000017', 'ingredients_text': 'Milk Solids, Sugar, Permitted Emulsifier (INS 471), Stabilizer (INS 407), Vanilla Flavour'}, {'name': 'Havmor Chocolate Ice Cream', 'brand': 'Havmor', 'image_thumb_url': '', 'code': '8901000000018', 'ingredients_text': 'Milk Solids, Sugar, Cocoa Solids, Cocoa Butter, Emulsifier, Stabilizer'}],
+    'breads': [{'name': 'Britannia 100% Whole Wheat Bread', 'brand': 'Britannia', 'image_thumb_url': '', 'code': '8901000000017', 'ingredients_text': 'Whole Wheat Flour (Atta), Yeast, Sugar, Gluten, Iodised Salt, Preservative (INS 282)'}, {'name': 'Harvest Gold Brown Bread', 'brand': 'Harvest', 'image_thumb_url': '', 'code': '8901000000018', 'ingredients_text': 'Whole Wheat Flour, Sugar, Yeast, Soya Flour, Salt, Preservative (INS 282)'}, {'name': 'English Oven White Bread', 'brand': 'English', 'image_thumb_url': '', 'code': '8901000000019', 'ingredients_text': 'Refined Wheat Flour (Maida), Yeast, Sugar, Salt, Preservatives'}],
+    'spices': [{'name': 'Everest Garam Masala', 'brand': 'Everest', 'image_thumb_url': '', 'code': '8901000000018', 'ingredients_text': 'Coriander, Cumin, Black Pepper, Ginger, Cinnamon, Cardamom, Cloves'}, {'name': 'MDH Deggi Mirch', 'brand': 'MDH', 'image_thumb_url': '', 'code': '8901000000019', 'ingredients_text': 'Red Chilli Powder'}, {'name': 'Catch Turmeric Powder', 'brand': 'Catch', 'image_thumb_url': '', 'code': '8901000000020', 'ingredients_text': 'Turmeric Powder'}],
+    'pickles': [{'name': "Mother's Recipe Mango Pickle", 'brand': "Mother's", 'image_thumb_url': '', 'code': '8901000000019', 'ingredients_text': 'Mango Pieces, Salt, Mustard Oil, Fenugreek, Mustard, Chilli Powder, Turmeric, Acidity Regulator (INS 260)'}, {'name': 'Priya Lime Pickle', 'brand': 'Priya', 'image_thumb_url': '', 'code': '8901000000020', 'ingredients_text': 'Lime Pieces, Salt, Sesame Oil, Chilli Powder, Mustard Powder, Fenugreek Powder, Turmeric Powder'}, {'name': "Nilon's Mixed Pickle", 'brand': "Nilon's", 'image_thumb_url': '', 'code': '8901000000021', 'ingredients_text': 'Mango, Lime, Carrot, Green Chilli, Salt, Cottonseed Oil, Spices, Acidity Regulator (INS 260)'}],
+    'prepared-meals': [{'name': 'MTR Ready to Eat Paneer Butter Masala', 'brand': 'MTR', 'image_thumb_url': '', 'code': '8901000000020', 'ingredients_text': 'Water, Paneer, Tomato, Onion, Butter, Cashew Nut, Ginger, Garlic, Spices'}, {'name': 'Gits Ready to Eat Dal Makhani', 'brand': 'Gits', 'image_thumb_url': '', 'code': '8901000000021', 'ingredients_text': 'Water, Black Gram, Red Kidney Beans, Tomato, Butter, Cream, Salt, Ginger, Garlic, Spices'}, {'name': "Haldiram's Ready to Eat Rajma Masala", 'brand': "Haldiram's", 'image_thumb_url': '', 'code': '8901000000022', 'ingredients_text': 'Rajma Beans, Water, Tomato, Onion, Edible Vegetable Oil, Ginger, Garlic, Spices'}],
+    'energy-drinks': [{'name': 'Red Bull Energy Drink', 'brand': 'Red', 'image_thumb_url': '', 'code': '8901000000021', 'ingredients_text': 'Water, Sucrose, Glucose, Citric Acid, Taurine, Sodium Bicarbonate, Caffeine, Niacin, B-vitamins'}, {'name': 'Monster Energy', 'brand': 'Monster', 'image_thumb_url': '', 'code': '8901000000022', 'ingredients_text': 'Carbonated Water, Sugar, Glucose, Citric Acid, Natural Flavours, Taurine, Caffeine, Ginseng Extract'}, {'name': 'Sting Energy Drink', 'brand': 'Sting', 'image_thumb_url': '', 'code': '8901000000023', 'ingredients_text': 'Carbonated Water, Sugar, Citric Acid, Taurine, Caffeine, Inositol, Preservatives, Colour'}],
+    'teas': [{'name': 'Tata Tea Premium', 'brand': 'Tata', 'image_thumb_url': '', 'code': '8901000000022', 'ingredients_text': 'Tea Leaves'}, {'name': 'Taj Mahal Tea', 'brand': 'Taj', 'image_thumb_url': '', 'code': '8901000000023', 'ingredients_text': 'Assam Tea Leaves'}, {'name': 'Red Label Tea', 'brand': 'Red', 'image_thumb_url': '', 'code': '8901000000024', 'ingredients_text': 'Black Tea Leaves'}],
+    'coffees': [{'name': 'Nescafe Classic', 'brand': 'Nescafe', 'image_thumb_url': '', 'code': '8901000000023', 'ingredients_text': 'Coffee Beans'}, {'name': 'Bru Instant Coffee', 'brand': 'Bru', 'image_thumb_url': '', 'code': '8901000000024', 'ingredients_text': 'Coffee Beans, Chicory'}, {'name': 'Tata Coffee Grand', 'brand': 'Tata', 'image_thumb_url': '', 'code': '8901000000025', 'ingredients_text': 'Coffee Powder, Chicory'}],
+    'chutneys': [{'name': 'Kissan Sweet & Spicy Chutney', 'brand': 'Kissan', 'image_thumb_url': '', 'code': '8901000000024', 'ingredients_text': 'Sugar, Tamarind Paste, Water, Salt, Spices, Acidity Regulator (INS 260)'}, {'name': "Mother's Recipe Tamarind Chutney", 'brand': "Mother's", 'image_thumb_url': '', 'code': '8901000000025', 'ingredients_text': 'Sugar, Tamarind, Dates, Salt, Spices, Acidity Regulator'}, {'name': 'Priya Gongura Chutney', 'brand': 'Priya', 'image_thumb_url': '', 'code': '8901000000026', 'ingredients_text': 'Gongura Leaves, Sesame Oil, Salt, Chilli Powder, Garlic, Fenugreek, Mustard'}],
+    'jams': [{'name': 'Kissan Mixed Fruit Jam', 'brand': 'Kissan', 'image_thumb_url': '', 'code': '8901000000025', 'ingredients_text': 'Sugar, Mixed Fruit Pulp, Thickener (INS 440), Acidity Regulator (INS 330), Preservative (INS 211)'}, {'name': 'Mapro Strawberry Jam', 'brand': 'Mapro', 'image_thumb_url': '', 'code': '8901000000026', 'ingredients_text': 'Sugar, Strawberry Pulp, Pectin, Citric Acid, Preservatives'}, {'name': "Hershey's Chocolate Syrup", 'brand': "Hershey's", 'image_thumb_url': '', 'code': '8901000000027', 'ingredients_text': 'Sugar, Water, Cocoa Powder, High Fructose Corn Syrup, Preservative (INS 202), Xanthan Gum'}],
+    'dietary-supplements': [{'name': 'Horlicks Classic Malt', 'brand': 'Horlicks', 'image_thumb_url': '', 'code': '8901000000026', 'ingredients_text': 'Malted Barley, Wheat Flour, Milk Solids, Sugar, Minerals, Vitamins, Salt'}, {'name': 'Bournvita Cadbury', 'brand': 'Bournvita', 'image_thumb_url': '', 'code': '8901000000027', 'ingredients_text': 'Cereal Extract, Sugar, Cocoa Powder, Milk Solids, Raising Agents, Emulsifiers, Vitamins, Minerals'}, {'name': 'Ensure Nutritional Powder', 'brand': 'Ensure', 'image_thumb_url': '', 'code': '8901000000028', 'ingredients_text': 'Maltodextrin, Calcium Caseinate, Sucrose, Vegetable Oils, Minerals, Vitamins'}],
+    'baby-foods': [{'name': 'Cerelac Wheat Apple', 'brand': 'Cerelac', 'image_thumb_url': '', 'code': '8901000000027', 'ingredients_text': 'Wheat Flour, Milk Solids, Sucrose, Apple Juice Concentrate, Soyabean Oil, Minerals, Vitamins'}, {'name': 'Farex Baby Food', 'brand': 'Farex', 'image_thumb_url': '', 'code': '8901000000028', 'ingredients_text': 'Wheat Flour, Milk Solids, Sugar, Minerals, Vitamins'}, {'name': 'Nestum Rice Baby Cereal', 'brand': 'Nestum', 'image_thumb_url': '', 'code': '8901000000029', 'ingredients_text': 'Rice Flour, Milk Solids, Sucrose, Soyabean Oil, Vitamins, Minerals'}],
+    'frozen-foods': [{'name': 'McCain French Fries', 'brand': 'McCain', 'image_thumb_url': '', 'code': '8901000000028', 'ingredients_text': 'Potato, Refined Palm Oil'}, {'name': 'Safal Frozen Green Peas', 'brand': 'Safal', 'image_thumb_url': '', 'code': '8901000000029', 'ingredients_text': 'Green Peas'}, {'name': "Venky's Chicken Nuggets", 'brand': "Venky's", 'image_thumb_url': '', 'code': '8901000000030', 'ingredients_text': 'Chicken Meat, Water, Bread Crumbs, Batter, Refined Palm Oil, Spices'}],
+    'canned-foods': [{'name': 'Del Monte Canned Pineapple Slices', 'brand': 'Del', 'image_thumb_url': '', 'code': '8901000000029', 'ingredients_text': 'Pineapple Slices, Water, Sugar, Citric Acid'}, {'name': 'Golden Crown Canned Mushroom', 'brand': 'Golden', 'image_thumb_url': '', 'code': '8901000000030', 'ingredients_text': 'Mushrooms, Water, Salt, Citric Acid'}, {'name': 'American Garden Canned Sweet Corn', 'brand': 'American', 'image_thumb_url': '', 'code': '8901000000031', 'ingredients_text': 'Sweet Corn, Water, Salt'}],
+    'carbonated-beverages': [{'name': 'Coca-Cola Classic', 'brand': 'Coca-Cola', 'image_thumb_url': '', 'code': '8901000000030', 'ingredients_text': 'Carbonated Water, Sugar, Acidity Regulator (INS 338), Caffeine, Natural Colour (INS 150d)'}, {'name': 'Pepsi Cola', 'brand': 'Pepsi', 'image_thumb_url': '', 'code': '8901000000031', 'ingredients_text': 'Carbonated Water, Sugar, Acidity Regulator, Caffeine, Colour'}, {'name': 'Sprite Lemon Lime', 'brand': 'Sprite', 'image_thumb_url': '', 'code': '8901000000032', 'ingredients_text': 'Carbonated Water, Sugar, Acidity Regulators (INS 330, INS 331), Preservative (INS 211)'}],
+    'candies': [{'name': 'Pulse Candy Mango', 'brand': 'Pulse', 'image_thumb_url': '', 'code': '8901000000031', 'ingredients_text': 'Sugar, Liquid Glucose, Amchur Powder, Citric Acid, Food Colours'}, {'name': 'Alpenliebe Gold Candy', 'brand': 'Alpenliebe', 'image_thumb_url': '', 'code': '8901000000032', 'ingredients_text': 'Sugar, Liquid Glucose, Condensed Milk, Butter, Salt, Emulsifier, Flavours'}, {'name': 'Orbit Sugarfree Chewing Gum', 'brand': 'Orbit', 'image_thumb_url': '', 'code': '8901000000033', 'ingredients_text': 'Sorbitol, Gum Base, Xylitol, Mannitol, Humectant (INS 422), Sweeteners (Aspartame, Acesulfame K)'}],
+    'papads': [{'name': 'Lijjat Udidad Papad', 'brand': 'Lijjat', 'image_thumb_url': '', 'code': '8901000000032', 'ingredients_text': 'Udad Dal Flour, Black Pepper, Salt, Raising Agent (INS 500ii), Cottonseed Oil'}, {'name': "Mother's Recipe Plain Papad", 'brand': "Mother's", 'image_thumb_url': '', 'code': '8901000000033', 'ingredients_text': 'Udad Dal Flour, Salt, Asafoetida, Papad Khar'}, {'name': "Nilon's Moong Papad", 'brand': "Nilon's", 'image_thumb_url': '', 'code': '8901000000034', 'ingredients_text': 'Moong Dal Flour, Udad Dal Flour, Black Pepper, Salt, Spices'}],
+    'nuts': [{'name': 'Tata Sampann Almonds', 'brand': 'Tata', 'image_thumb_url': '', 'code': '8901000000033', 'ingredients_text': 'Almonds'}, {'name': 'Happilo California Walnuts', 'brand': 'Happilo', 'image_thumb_url': '', 'code': '8901000000034', 'ingredients_text': 'Walnuts'}, {'name': 'Delinut Cashews salted', 'brand': 'Delinut', 'image_thumb_url': '', 'code': '8901000000035', 'ingredients_text': 'Cashews, Salt, Gum Arabic'}],
+    'honeys': [{'name': 'Dabur Honey', 'brand': 'Dabur', 'image_thumb_url': '', 'code': '8901000000034', 'ingredients_text': 'Honey'}, {'name': 'Patanjali Pure Honey', 'brand': 'Patanjali', 'image_thumb_url': '', 'code': '8901000000035', 'ingredients_text': 'Honey'}, {'name': 'Saffola Wild Forest Honey', 'brand': 'Saffola', 'image_thumb_url': '', 'code': '8901000000036', 'ingredients_text': 'Honey'}],
+    'cooking-oils': [{'name': 'Fortune Mustard Oil', 'brand': 'Fortune', 'image_thumb_url': '', 'code': '8901000000035', 'ingredients_text': 'Mustard Oil'}, {'name': 'Saffola Gold Cooking Oil', 'brand': 'Saffola', 'image_thumb_url': '', 'code': '8901000000036', 'ingredients_text': 'Refined Rice Bran Oil, Refined Sunflower Oil, Antioxidant (INS 319)'}, {'name': 'Fortune Refined Sunflower Oil', 'brand': 'Fortune', 'image_thumb_url': '', 'code': '8901000000037', 'ingredients_text': 'Refined Sunflower Oil'}],
+    'ghee': [{'name': 'Amul Pure Ghee', 'brand': 'Amul', 'image_thumb_url': '', 'code': '8901000000036', 'ingredients_text': 'Milk Fat'}, {'name': 'Patamjali Cow Ghee', 'brand': 'Patamjali', 'image_thumb_url': '', 'code': '8901000000037', 'ingredients_text': 'Cow Milk Fat'}, {'name': 'Gowardhan Pure Ghee', 'brand': 'Gowardhan', 'image_thumb_url': '', 'code': '8901000000038', 'ingredients_text': 'Milk Fat'}],
+    'flours': [{'name': 'Aashirvaad Shudh Chakki Atta', 'brand': 'Aashirvaad', 'image_thumb_url': '', 'code': '8901000000037', 'ingredients_text': 'Whole Wheat'}, {'name': 'Pillsbury Chakki Fresh Atta', 'brand': 'Pillsbury', 'image_thumb_url': '', 'code': '8901000000038', 'ingredients_text': 'Whole Wheat'}, {'name': 'Fortune Chakki Fresh Atta', 'brand': 'Fortune', 'image_thumb_url': '', 'code': '8901000000039', 'ingredients_text': 'Whole Wheat'}],
+    'pulses': [{'name': 'Tata Sampann Toor Dal', 'brand': 'Tata', 'image_thumb_url': '', 'code': '8901000000038', 'ingredients_text': 'Toor Dal'}, {'name': 'Organic Tattva Moong Dal', 'brand': 'Organic', 'image_thumb_url': '', 'code': '8901000000039', 'ingredients_text': 'Moong Dal'}, {'name': 'Fortune Chana Dal', 'brand': 'Fortune', 'image_thumb_url': '', 'code': '8901000000040', 'ingredients_text': 'Chana Dal'}],
+    'rices': [{'name': 'India Gate Basmati Rice Premium', 'brand': 'India', 'image_thumb_url': '', 'code': '8901000000039', 'ingredients_text': 'Basmati Rice'}, {'name': 'Daawat Rozana Gold Basmati Rice', 'brand': 'Daawat', 'image_thumb_url': '', 'code': '8901000000040', 'ingredients_text': 'Basmati Rice'}, {'name': 'Lal Qilla Basmati Rice', 'brand': 'Lal', 'image_thumb_url': '', 'code': '8901000000041', 'ingredients_text': 'Basmati Rice'}],
+    'salts': [{'name': 'Tata Salt Iodised', 'brand': 'Tata', 'image_thumb_url': '', 'code': '8901000000040', 'ingredients_text': 'Iodised Salt, Potassium Iodate, Anticaking Agent (INS 536)'}, {'name': 'Aashirvaad Iodised Salt', 'brand': 'Aashirvaad', 'image_thumb_url': '', 'code': '8901000000041', 'ingredients_text': 'Iodised Salt, Anticaking Agent'}, {'name': 'Catch Rock Salt', 'brand': 'Catch', 'image_thumb_url': '', 'code': '8901000000042', 'ingredients_text': 'Rock Salt'}],
+    'sugars': [{'name': 'Mawana Double Refined Sugar', 'brand': 'Mawana', 'image_thumb_url': '', 'code': '8901000000041', 'ingredients_text': 'Sugar'}, {'name': 'Trust Classic Sulphurless Sugar', 'brand': 'Trust', 'image_thumb_url': '', 'code': '8901000000042', 'ingredients_text': 'Sugar'}, {'name': "Parry's White Sugar", 'brand': "Parry's", 'image_thumb_url': '', 'code': '8901000000043', 'ingredients_text': 'Sugar'}],
+    'vinegars': [{'name': 'Del Monte Synthetic Vinegar', 'brand': 'Del', 'image_thumb_url': '', 'code': '8901000000042', 'ingredients_text': 'Water, Acetic Acid (INS 260)'}, {'name': 'Heinz Apple Cider Vinegar', 'brand': 'Heinz', 'image_thumb_url': '', 'code': '8901000000043', 'ingredients_text': 'Apple Cider Vinegar'}, {'name': 'DiSano Apple Cider Vinegar', 'brand': 'DiSano', 'image_thumb_url': '', 'code': '8901000000044', 'ingredients_text': 'Apple Cider Vinegar, Water'}],
+    'dehydrated-soups': [{'name': 'Knorr Mixed Vegetable Soup', 'brand': 'Knorr', 'image_thumb_url': '', 'code': '8901000000043', 'ingredients_text': 'Refined Wheat Flour, Corn Flour, Sugar, Salt, Dehydrated Vegetables, Thickener (INS 415), Hydrolyzed Vegetable Protein'}, {'name': "Ching's Secret Tomato Soup", 'brand': "Ching's", 'image_thumb_url': '', 'code': '8901000000044', 'ingredients_text': 'Tomato Powder, Sugar, Potato Starch, Salt, Spices, Xanthan Gum'}, {'name': 'Knorr Hot & Sour Chicken Soup', 'brand': 'Knorr', 'image_thumb_url': '', 'code': '8901000000045', 'ingredients_text': 'Refined Wheat Flour, Sugar, Salt, Dehydrated Chicken, Soy Sauce Powder, Spices'}],
+    'instant-coffees': [{'name': 'Nescafe Classic', 'brand': 'Nescafe', 'image_thumb_url': '', 'code': '8901000000044', 'ingredients_text': 'Coffee Beans'}, {'name': 'Bru Gold Coffee', 'brand': 'Bru', 'image_thumb_url': '', 'code': '8901000000045', 'ingredients_text': 'Coffee Beans'}, {'name': 'Davidoff Rich Aroma Instant Coffee', 'brand': 'Davidoff', 'image_thumb_url': '', 'code': '8901000000046', 'ingredients_text': 'Coffee Beans'}],
+    'protein-powders': [{'name': 'Oziva Organic Plant Protein', 'brand': 'Oziva', 'image_thumb_url': '', 'code': '8901000000045', 'ingredients_text': 'Organic Pea Protein, Organic Brown Rice Protein, Organic Quinoa'}, {'name': 'MuscleBlaze Raw Whey Protein', 'brand': 'MuscleBlaze', 'image_thumb_url': '', 'code': '8901000000046', 'ingredients_text': 'Whey Protein Concentrate'}, {'name': 'Optimum Nutrition 100% Whey Gold Standard', 'brand': 'Optimum', 'image_thumb_url': '', 'code': '8901000000047', 'ingredients_text': 'Whey Protein Isolate, Whey Protein Concentrate, Whey Peptides, Cocoa, Soy Lecithin'}],
+    'snack-bars': [{'name': 'Yogabar Multigrain Energy Bar', 'brand': 'Yogabar', 'image_thumb_url': '', 'code': '8901000000046', 'ingredients_text': 'Oats, Dates, Almonds, Cashews, Honey, Sunflower Seeds, Chia Seeds'}, {'name': 'RiteBite Max Protein Daily Bar', 'brand': 'RiteBite', 'image_thumb_url': '', 'code': '8901000000047', 'ingredients_text': 'Protein Blend, Oats, Cocoa Powder, Soy Nuggets, Glycerine, Prebiotics'}, {'name': 'The Whole Truth Protein Bar', 'brand': 'The', 'image_thumb_url': '', 'code': '8901000000048', 'ingredients_text': 'Dates, Whey Protein, Cashews, Almonds, Cocoa Powder'}],
+    'wafers': [{'name': 'Dukes Waffy Strawberry', 'brand': 'Dukes', 'image_thumb_url': '', 'code': '8901000000047', 'ingredients_text': 'Refined Wheat Flour, Sugar, Palm Oil, Starch, Strawberry Powder, Emulsifier (INS 322)'}, {'name': 'Amul Choco Wafers', 'brand': 'Amul', 'image_thumb_url': '', 'code': '8901000000048', 'ingredients_text': 'Refined Wheat Flour, Sugar, Hydrogenated Vegetable Oil, Cocoa Powder'}, {'name': 'Tiffany Crunch N Cream Wafers', 'brand': 'Tiffany', 'image_thumb_url': '', 'code': '8901000000049', 'ingredients_text': 'Wheat Flour, Sugar, Vegetable Fat, Milk Solids, Cocoa Powder'}],
+    'yogurt': [{'name': 'Epigamia Greek Yogurt Strawberry', 'brand': 'Epigamia', 'image_thumb_url': '', 'code': '8901000000048', 'ingredients_text': 'Double Toned Milk, Strawberry Prep, Active Culture'}, {'name': 'Mother Dairy Fruit Yogurt Blueberry', 'brand': 'Mother', 'image_thumb_url': '', 'code': '8901000000049', 'ingredients_text': 'Toned Milk, Sugar, Blueberry Prep, Pectin, Active Culture'}, {'name': 'Amul Masti Spiced Buttermilk', 'brand': 'Amul', 'image_thumb_url': '', 'code': '8901000000050', 'ingredients_text': 'Water, Milk Solids, Salt, Spices, Active Culture'}],
+    'butters': [{'name': 'Amul Butter Salted', 'brand': 'Amul', 'image_thumb_url': '', 'code': '8901000000049', 'ingredients_text': 'Butter, Iodised Salt, Annatto Extract'}, {'name': 'Mother Dairy Salted Butter', 'brand': 'Mother', 'image_thumb_url': '', 'code': '8901000000050', 'ingredients_text': 'Butter, Iodised Salt'}, {'name': 'Nutralite Table Spread', 'brand': 'Nutralite', 'image_thumb_url': '', 'code': '8901000000051', 'ingredients_text': 'Refined Vegetable Oils, Water, Salt, Emulsifiers, Vitamin A, Vitamin D'}],
+    'cheeses': [{'name': 'Amul Cheese Slices', 'brand': 'Amul', 'image_thumb_url': '', 'code': '8901000000050', 'ingredients_text': 'Cheese, Milk Solids, Emulsifying Salts (INS 331, INS 452), Iodised Salt, Preservative (INS 200)'}, {'name': 'Britannia Cheese Cubes', 'brand': 'Britannia', 'image_thumb_url': '', 'code': '8901000000051', 'ingredients_text': 'Cheese, Water, Milk Solids, Emulsifying Salts, Salt'}, {'name': 'Mother Dairy Cheese Spread', 'brand': 'Mother', 'image_thumb_url': '', 'code': '8901000000052', 'ingredients_text': 'Cheese, Water, Milk Solids, Emulsifiers, Salt'}],
+    'sauces': [{'name': 'FunFoods Eggless Mayonnaise', 'brand': 'FunFoods', 'image_thumb_url': '', 'code': '8901000000051', 'ingredients_text': 'Refined Soyabean Oil, Water, Sugar, Lemon Juice, Thickeners (INS 1422, INS 415), Salt, Acidity Regulators (INS 270, INS 330)'}, {'name': 'Veeba Pasta & Pizza Sauce', 'brand': 'Veeba', 'image_thumb_url': '', 'code': '8901000000052', 'ingredients_text': 'Tomato Paste, Water, Onion, Sugar, Liquid Glucose, Garlic, Spices, Herbs'}, {'name': "Ching's Secret Red Chilli Sauce", 'brand': "Ching's", 'image_thumb_url': '', 'code': '8901000000053', 'ingredients_text': 'Water, Red Chilli, Ginger, Garlic, Salt, Starch, Acidity Regulator (INS 260)'}],
 }
 
 def fast_score_ingredients(db: Session, ingredients_text: str) -> tuple[int, str]:
@@ -781,7 +648,7 @@ def fast_score_ingredients(db: Session, ingredients_text: str) -> tuple[int, str
 
 
 @app.get("/api/search-product")
-async def search_product(query: str):
+async def search_product(query: str, user: models.User = Depends(get_current_user)):
     """
     Searches Open Food Facts by product or brand name.
     """
@@ -834,7 +701,7 @@ async def search_product(query: str):
 
 
 @app.get("/api/analyze-barcode")
-async def analyze_barcode(code: str, language: str = "en", db = Depends(get_db), user_optional: models.User | None = Depends(get_current_user_optional)):
+async def analyze_barcode(code: str, language: str = "en", db = Depends(get_db), user: models.User = Depends(get_current_user)):
     """
     Retrieves ingredients for a barcode, runs the 3-layer analysis + scoring pipeline,
     and returns identical structure to /api/parse-ingredients.
@@ -926,23 +793,22 @@ async def analyze_barcode(code: str, language: str = "en", db = Depends(get_db),
         if not product_guess or len(product_guess.strip()) < 3:
             product_guess = guess_product_from_ingredients(results)
             
-        # Save to history if logged in
-        if user_optional:
-            try:
-                hist = models.ScanHistory(
-                    user_id=user_optional.id,
-                    product_name=product_guess,
-                    product_guess=product_guess,
-                    overall_score=overall_score,
-                    score_label=score_label,
-                    ingredients_data=results
-                )
-                db.add(hist)
-                db.commit()
-                print(f"[HISTORY] Successfully saved barcode scan for user {user_optional.email}")
-            except Exception as hist_err:
-                db.rollback()
-                print(f"[HISTORY] Error saving barcode scan: {hist_err}")
+        # Save to history (user is always authenticated now)
+        try:
+            hist = models.ScanHistory(
+                user_id=user.id,
+                product_name=product_guess,
+                product_guess=product_guess,
+                overall_score=overall_score,
+                score_label=score_label,
+                ingredients_data=results
+            )
+            db.add(hist)
+            db.commit()
+            print(f"[HISTORY] Successfully saved barcode scan for user {user.email}")
+        except Exception as hist_err:
+            db.rollback()
+            print(f"[HISTORY] Error saving barcode scan: {hist_err}")
                 
         return {
             "ingredients": results,
@@ -960,7 +826,7 @@ async def analyze_barcode(code: str, language: str = "en", db = Depends(get_db),
 
 
 @app.get("/api/category-best")
-async def get_category_best(category: str, db = Depends(get_db)):
+async def get_category_best(category: str, db = Depends(get_db), user: models.User = Depends(get_current_user)):
     """
     Ranked leaderboard of products in a category, sorted by health score.
     """
@@ -1213,12 +1079,12 @@ _categories_cache = {
 }
 
 @app.get("/api/categories")
-async def get_categories():
+async def get_categories(user: models.User = Depends(get_current_user)):
     """
-    Fetches the full list of available food categories from Open Food Facts,
-    filters for English tags with > 50 products, sorted by product count descending.
-    Caches the list in-memory for 24 hours.
-    Falls back to mock categories if the API call fails.
+    Fetches the full list of available food categories from the static Open Food Facts taxonomy,
+    caching the result in-memory for 24 hours.
+    Retries once after a 2-second delay if the request fails.
+    Falls back to a comprehensive list of 46 mock categories if the API remains unavailable.
     """
     global _categories_cache
     now = time.time()
@@ -1227,8 +1093,8 @@ async def get_categories():
     if _categories_cache["data"] and now < _categories_cache["expiry"]:
         return {"categories": _categories_cache["data"]}
         
-    # 2. Fetch from Open Food Facts categories API
-    url = "https://world.openfoodfacts.org/categories.json"
+    # 2. Fetch from static Open Food Facts taxonomy endpoint
+    url = "https://static.openfoodfacts.org/data/taxonomies/categories.json"
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -1241,65 +1107,102 @@ async def get_categories():
         }
     )
     
-    try:
-        with urllib.request.urlopen(req, context=ctx, timeout=8.0) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode('utf-8'))
-                tags = data.get("tags", [])
+    data = None
+    for attempt in range(1, 3):
+        try:
+            print(f"[CATEGORIES] Fetching categories taxonomy from static.openfoodfacts.org (Attempt {attempt})...")
+            with urllib.request.urlopen(req, context=ctx, timeout=12.0) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode('utf-8'))
+                    break
+        except Exception as e:
+            print(f"[CATEGORIES] Attempt {attempt} failed: {e}")
+            if attempt == 1:
+                print("[CATEGORIES] Retrying in 2 seconds...")
+                time.sleep(2.0)
                 
-                # Filter English categories and any matching noodle/pasta categories with >= 10 products
-                filtered = []
-                for t in tags:
-                    tag_id = t.get("id") or ""
-                    tag_name = t.get("name") or ""
-                    products_count = t.get("products") or 0
-                    
-                    tag_id_lower = tag_id.lower()
-                    tag_name_lower = tag_name.lower()
-                    
-                    is_food_candidate = False
-                    if tag_id_lower.startswith("en:"):
-                        is_food_candidate = True
-                    elif any(term in tag_id_lower or term in tag_name_lower for term in ["noodle", "pasta", "spaghetti", "macaroni"]):
-                        is_food_candidate = True
-                        
-                    if is_food_candidate and products_count >= 10 and tag_name:
-                        filtered.append({
-                            "id": tag_id,
-                            "name": tag_name,
-                            "products": products_count
-                        })
-                
-                # Sort by count descending
-                filtered.sort(key=lambda x: x["products"], reverse=True)
-                
-                # Cache for 24 hours
-                _categories_cache["data"] = filtered
-                _categories_cache["expiry"] = now + (24 * 3600)
-                
-                print(f"[CATEGORIES] Loaded and filtered {len(filtered)} categories from OFF API (Threshold >= 10).")
-                return {"categories": filtered}
-                
-    except Exception as e:
-        print(f"[CATEGORIES] Failed to fetch from OFF categories API: {e}. Using mock fallback.")
-        
-    # 3. Fallback to mock categories (including noodles, instant-noodles, pasta) if the call fails
+    if data:
+        try:
+            filtered = []
+            for k, v in data.items():
+                if k.startswith("en:") and isinstance(v, dict):
+                    name_dict = v.get("name")
+                    if isinstance(name_dict, dict):
+                        eng_name = name_dict.get("en")
+                        if eng_name:
+                            filtered.append({
+                                "id": k,
+                                "name": eng_name,
+                                "products": 100
+                            })
+            
+            # Sort alphabetically
+            filtered.sort(key=lambda x: x["name"].lower())
+            
+            # Cache for 24 hours
+            _categories_cache["data"] = filtered
+            _categories_cache["expiry"] = now + (24 * 3600)
+            
+            print(f"[CATEGORIES] Loaded and filtered {len(filtered)} categories from static taxonomy API.")
+            return {"categories": filtered}
+        except Exception as parse_err:
+            print(f"[CATEGORIES] Parsing static taxonomy failed: {parse_err}")
+            
+    # 3. Fallback to mock categories (46 common Indian food categories) if the live call fails
     fallback_categories = [
         {"id": "en:biscuits", "name": "Biscuits", "products": 500},
-        {"id": "en:ketchups", "name": "Ketchup", "products": 500},
-        {"id": "en:fruit-juices", "name": "Juices", "products": 500},
+        {"id": "en:cookies", "name": "Cookies", "products": 500},
         {"id": "en:potato-chips", "name": "Chips & Crisps", "products": 500},
         {"id": "en:chocolates", "name": "Chocolates", "products": 500},
-        {"id": "en:noodles", "name": "Noodles", "products": 300},
-        {"id": "en:instant-noodles", "name": "Instant Noodles", "products": 400},
-        {"id": "en:pastas", "name": "Pasta", "products": 350}
+        {"id": "en:ketchups", "name": "Ketchup & Sauces", "products": 500},
+        {"id": "en:fruit-juices", "name": "Juices & Beverages", "products": 500},
+        {"id": "en:instant-noodles", "name": "Instant Noodles", "products": 500},
+        {"id": "en:pastas", "name": "Pasta", "products": 500},
+        {"id": "en:breakfast-cereals", "name": "Breakfast Cereals", "products": 500},
+        {"id": "en:milks", "name": "Dairy Products", "products": 500},
+        {"id": "en:ice-creams", "name": "Ice Cream", "products": 500},
+        {"id": "en:breads", "name": "Bread & Bakery", "products": 500},
+        {"id": "en:spices", "name": "Spices & Masalas", "products": 500},
+        {"id": "en:pickles", "name": "Pickles & Achaar", "products": 500},
+        {"id": "en:prepared-meals", "name": "Ready-to-Eat Meals", "products": 500},
+        {"id": "en:energy-drinks", "name": "Energy Drinks", "products": 500},
+        {"id": "en:teas", "name": "Tea", "products": 500},
+        {"id": "en:coffees", "name": "Coffee", "products": 500},
+        {"id": "en:chutneys", "name": "Chutneys", "products": 500},
+        {"id": "en:jams", "name": "Jams & Spreads", "products": 500},
+        {"id": "en:dietary-supplements", "name": "Health Drinks & Supplements", "products": 500},
+        {"id": "en:baby-foods", "name": "Baby Food", "products": 500},
+        {"id": "en:frozen-foods", "name": "Frozen Foods", "products": 500},
+        {"id": "en:canned-foods", "name": "Canned Foods", "products": 500},
+        {"id": "en:carbonated-beverages", "name": "Soft Drinks", "products": 500},
+        {"id": "en:candies", "name": "Candy & Chewing Gum", "products": 500},
+        {"id": "en:papads", "name": "Papad", "products": 500},
+        {"id": "en:nuts", "name": "Dry Fruits & Nuts", "products": 500},
+        {"id": "en:honeys", "name": "Honey", "products": 500},
+        {"id": "en:cooking-oils", "name": "Cooking Oil", "products": 500},
+        {"id": "en:ghee", "name": "Ghee", "products": 500},
+        {"id": "en:flours", "name": "Atta & Flour", "products": 500},
+        {"id": "en:pulses", "name": "Pulses & Dal", "products": 500},
+        {"id": "en:rices", "name": "Rice", "products": 500},
+        {"id": "en:salts", "name": "Salt", "products": 500},
+        {"id": "en:sugars", "name": "Sugar", "products": 500},
+        {"id": "en:vinegars", "name": "Vinegar", "products": 500},
+        {"id": "en:dehydrated-soups", "name": "Soup Mixes", "products": 500},
+        {"id": "en:instant-coffees", "name": "Instant Coffee", "products": 500},
+        {"id": "en:protein-powders", "name": "Protein Powders", "products": 500},
+        {"id": "en:snack-bars", "name": "Energy Bars", "products": 500},
+        {"id": "en:wafers", "name": "Wafers", "products": 500},
+        {"id": "en:yogurt", "name": "Yogurt & Dahi", "products": 500},
+        {"id": "en:butters", "name": "Butter", "products": 500},
+        {"id": "en:cheeses", "name": "Cheese", "products": 500},
+        {"id": "en:sauces", "name": "Sauces & Dressings", "products": 500}
     ]
     print(f"[CATEGORIES] Returning {len(fallback_categories)} fallback categories (OFF API unavailable).")
     return {"categories": fallback_categories}
 
 
 @app.get("/api/search-ingredient")
-async def search_ingredient(query: str, language: str = 'en', db: Session = Depends(get_db)):
+async def search_ingredient(query: str, language: str = 'en', db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     """
     Looks up a specific ingredient by name using the 3-layer lookup system.
     """

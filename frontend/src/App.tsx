@@ -871,6 +871,7 @@ function App() {
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                   required
+                  maxLength={50}
                   placeholder="••••••••"
                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 focus:border-brand-teal rounded-xl text-sm outline-none text-slate-800 transition"
                 />
@@ -2225,6 +2226,7 @@ function App() {
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                   required
+                  maxLength={50}
                   placeholder="••••••••"
                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 focus:border-brand-teal rounded-xl text-sm outline-none text-slate-800 transition"
                 />

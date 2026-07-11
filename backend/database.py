@@ -11,9 +11,17 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is not set")
 
-# Create SQLAlchemy engine
-# Note: For production-grade resilience, we could add connection pooling options here
-engine = create_engine(DATABASE_URL)
+# Create SQLAlchemy engine with connection pool resilience for PostgreSQL
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL)
+else:
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        pool_size=5,
+        max_overflow=10
+    )
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

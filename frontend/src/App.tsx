@@ -1056,68 +1056,151 @@ function App() {
               );
             })()}
 
-            {/* Safety Assessment Table */}
+            {/* Safety Assessment Table & Mobile Cards */}
             {parsedIngredients.length > 0 && (
-              <div className="overflow-x-auto border border-slate-150 rounded-2xl shadow-sm">
-                <table className="min-w-full divide-y divide-slate-150 text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th scope="col" className="px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.name')}</th>
-                      <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.status')}</th>
-                      <th scope="col" className="px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.whatIsThis')}</th>
-                      <th scope="col" className="px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.reason')}</th>
-                      <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.allergen')}</th>
-                      <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.frequency')}</th>
-                      <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.source')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-150 bg-white">
-                    {parsedIngredients.map((item, idx) => {
-                      const isUnsafe = item.safety_status === 'unsafe';
-                      const isSafe = item.safety_status === 'safe';
-                      const isModerate = item.safety_status === 'moderate';
-                      
-                      let rowBg = 'bg-white hover:bg-slate-50/50';
-                      let statusIcon = '⚠️';
-                      let reasonStyle = 'text-slate-500 font-normal';
-                      
-                      if (isUnsafe) {
-                        rowBg = 'bg-red-50/70 hover:bg-red-50/90 border-y border-red-100';
-                        statusIcon = '❌';
-                        reasonStyle = 'text-red-700 font-bold';
-                      } else if (isSafe) {
-                        rowBg = 'bg-emerald-50/15 hover:bg-emerald-50/30';
-                        statusIcon = '✓';
-                      } else if (isModerate) {
-                        rowBg = 'bg-amber-50/20 hover:bg-amber-50/35';
-                        statusIcon = '⚠️';
-                      }
+              <>
+                {/* Desktop View: Table */}
+                <div className="hidden md:block overflow-x-auto border border-slate-150 rounded-2xl shadow-sm bg-white">
+                  <table className="min-w-full table-fixed divide-y divide-slate-150 text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th scope="col" className="w-[16%] px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.name')}</th>
+                        <th scope="col" className="w-[8%] px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.status')}</th>
+                        <th scope="col" className="w-[30%] px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.whatIsThis')}</th>
+                        <th scope="col" className="w-[22%] px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.reason')}</th>
+                        <th scope="col" className="w-[10%] px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.allergen')}</th>
+                        <th scope="col" className="w-[8%] px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.frequency')}</th>
+                        <th scope="col" className="w-[6%] px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.source')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 bg-white">
+                      {parsedIngredients.map((item, idx) => {
+                        const isUnsafe = item.safety_status === 'unsafe';
+                        const isSafe = item.safety_status === 'safe';
+                        const isModerate = item.safety_status === 'moderate';
+                        
+                        let rowBg = 'bg-white hover:bg-slate-50/50';
+                        let statusIcon = '⚠️';
+                        let reasonStyle = 'text-slate-500 font-normal';
+                        
+                        if (isUnsafe) {
+                          rowBg = 'bg-red-50/70 hover:bg-red-50/90 border-y border-red-100';
+                          statusIcon = '❌';
+                          reasonStyle = 'text-red-700 font-bold';
+                        } else if (isSafe) {
+                          rowBg = 'bg-emerald-50/15 hover:bg-emerald-50/30';
+                          statusIcon = '✓';
+                        } else if (isModerate) {
+                          rowBg = 'bg-amber-50/20 hover:bg-amber-50/35';
+                          statusIcon = '⚠️';
+                        }
 
-                      return (
-                        <tr key={idx} className={`${rowBg} transition-colors`}>
-                          <td className="px-4 py-3.5 font-bold text-slate-800 whitespace-nowrap">{item.ingredient}</td>
-                          <td className="px-4 py-3.5 text-center text-lg">{statusIcon}</td>
-                          <td className="px-4 py-3.5 text-slate-600 leading-relaxed font-normal min-w-[200px]">{item.simple_explanation}</td>
-                          <td className={`px-4 py-3.5 leading-relaxed min-w-[150px] ${reasonStyle}`}>{item.reason || '-'}</td>
-                          <td className="px-4 py-3.5 text-center whitespace-nowrap">
+                        return (
+                          <tr key={idx} className={`${rowBg} transition-colors`}>
+                            <td className="px-4 py-3.5 font-bold text-slate-800 break-words whitespace-normal align-top">{item.ingredient}</td>
+                            <td className="px-4 py-3.5 text-center text-lg align-top">{statusIcon}</td>
+                            <td className="px-4 py-3.5 text-slate-600 leading-relaxed font-normal break-words whitespace-normal align-top">{item.simple_explanation}</td>
+                            <td className={`px-4 py-3.5 leading-relaxed break-words whitespace-normal align-top ${reasonStyle}`}>{item.reason || '-'}</td>
+                            <td className="px-4 py-3.5 text-center align-top">
+                              {item.allergen !== 'none' ? (
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-bold inline-block ${
+                                  isUnsafe ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {item.allergen}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500 inline-block">{t('safety.col.noAllergen')}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3.5 text-center font-medium text-slate-600 align-top break-words whitespace-normal">{item.safe_frequency}</td>
+                            <td className="px-4 py-3.5 text-center text-slate-500 font-medium align-top break-words whitespace-normal">{item.source}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile View: Cards Layout */}
+                <div className="block md:hidden space-y-4">
+                  {parsedIngredients.map((item, idx) => {
+                    const isUnsafe = item.safety_status === 'unsafe';
+                    const isSafe = item.safety_status === 'safe';
+                    const isModerate = item.safety_status === 'moderate';
+                    
+                    let cardBg = 'bg-white border-slate-150';
+                    let statusIcon = '⚠️';
+                    let statusBadgeStyle = 'bg-amber-50 text-amber-700 border-amber-100';
+                    
+                    if (isUnsafe) {
+                      cardBg = 'bg-red-50/10 border-red-100';
+                      statusIcon = '❌';
+                      statusBadgeStyle = 'bg-red-50 text-red-700 border-red-100';
+                    } else if (isSafe) {
+                      cardBg = 'bg-emerald-50/5 border-emerald-100';
+                      statusIcon = '✓';
+                      statusBadgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                    } else if (isModerate) {
+                      cardBg = 'bg-amber-50/10 border-amber-100';
+                      statusIcon = '⚠️';
+                      statusBadgeStyle = 'bg-amber-50 text-amber-700 border-amber-100';
+                    }
+
+                    return (
+                      <div key={idx} className={`p-4 border rounded-2xl shadow-sm ${cardBg} animate-fadeIn flex flex-col space-y-3`}>
+                        {/* Header: Name + Status badge */}
+                        <div className="flex items-start justify-between">
+                          <h4 className="text-sm font-bold text-slate-800 break-words max-w-[70%]">{item.ingredient}</h4>
+                          <div className="flex items-center space-x-1.5 shrink-0">
+                            <span className="text-sm">{statusIcon}</span>
+                            <span className={`px-2 py-0.5 border rounded-full text-[10px] font-black uppercase tracking-wider ${statusBadgeStyle}`}>
+                              {item.safety_status}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* What is this? */}
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">{t('safety.col.whatIsThis')}</p>
+                          <p className="text-xs text-slate-600 leading-relaxed break-words">{item.simple_explanation}</p>
+                        </div>
+
+                        {/* Reason */}
+                        {item.reason && (
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">{t('safety.col.reason')}</p>
+                            <p className={`text-xs leading-relaxed break-words ${isUnsafe ? 'text-red-700 font-bold' : 'text-slate-500'}`}>{item.reason}</p>
+                          </div>
+                        )}
+
+                        {/* Meta row: Allergen, Frequency, Source */}
+                        <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-slate-100 text-[10px]">
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">{t('safety.col.allergen')}</p>
                             {item.allergen !== 'none' ? (
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold inline-block ${
                                 isUnsafe ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
                               }`}>
                                 {item.allergen}
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">{t('safety.col.noAllergen')}</span>
+                              <span className="text-slate-500 font-semibold">{t('safety.col.noAllergen')}</span>
                             )}
-                          </td>
-                          <td className="px-4 py-3.5 text-center whitespace-nowrap font-medium text-slate-600">{item.safe_frequency}</td>
-                          <td className="px-4 py-3.5 text-center whitespace-nowrap text-slate-500 font-medium">{item.source}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">{t('safety.col.frequency')}</p>
+                            <span className="text-slate-600 font-bold">{item.safe_frequency || '-'}</span>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">{t('safety.col.source')}</p>
+                            <span className="text-slate-500 font-bold">{item.source || '-'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
 
             {/* ── Sources Citation ── */}

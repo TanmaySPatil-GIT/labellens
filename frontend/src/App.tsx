@@ -87,6 +87,7 @@ function App() {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [leaderboardMessage, setLeaderboardMessage] = useState<string | null>(null);
 
   const [categories, setCategories] = useState<any[]>([]);
   const [categorySearch, setCategorySearch] = useState('');
@@ -544,10 +545,12 @@ function App() {
   const fetchCategoryLeaderboard = async (category: string) => {
     if (!category) {
       setLeaderboard([]);
+      setLeaderboardMessage(null);
       return;
     }
     setLoadingLeaderboard(true);
     setLeaderboardError(null);
+    setLeaderboardMessage(null);
     setLeaderboard([]);
 
     try {
@@ -565,6 +568,7 @@ function App() {
         throw new Error(data.detail || 'Failed to fetch category rankings.');
       }
       setLeaderboard(data.products || []);
+      setLeaderboardMessage(data.message || null);
     } catch (err: any) {
       setLeaderboardError(err.message || 'Error loading leaderboard.');
     } finally {
@@ -1836,6 +1840,15 @@ function App() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {!loadingLeaderboard && !leaderboardError && leaderboard.length === 0 && selectedCategory && (
+          <div className="p-8 text-center bg-slate-50 border border-slate-100 rounded-2xl animate-fadeIn">
+            <span className="text-4xl block mb-2">🍽️</span>
+            <p className="text-sm font-bold text-slate-700">
+              {leaderboardMessage || "No products found for this category yet — try another one!"}
+            </p>
           </div>
         )}
       </div>

@@ -835,16 +835,9 @@ async def get_category_best(category: str, db = Depends(get_db), user: models.Us
     """
     cat_normalized = category.lower().strip()
     
-    OFF_CATEGORY_MAP = {
-        "biscuits": "biscuits",
-        "ketchup": "ketchups",
-        "juice": "fruit-juices",
-        "chips": "potato-chips",
-        "chocolates": "chocolates"
-    }
-    off_cat = OFF_CATEGORY_MAP.get(cat_normalized, cat_normalized)
-    
-    url = f"https://world.openfoodfacts.org/api/v2/search?categories_tags={urllib.parse.quote(off_cat)}&page_size=20&fields=code,product_name,brands,image_thumb_url,ingredients_text"
+    # 1. Log the exact Open Food Facts URL being called
+    url = f"https://world.openfoodfacts.org/api/v2/search?categories_tags={urllib.parse.quote(cat_normalized)}&page_size=20&fields=code,product_name,brands,image_thumb_url,ingredients_text"
+    print(f"[CATEGORY] Querying OFF search API: {url}")
     
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
@@ -858,48 +851,92 @@ async def get_category_best(category: str, db = Depends(get_db), user: models.Us
         }
     )
     
-    products = []
+    raw_products = []
+    status_code = None
     try:
         with urllib.request.urlopen(req, context=ctx, timeout=5.0) as response:
-            if response.status == 200:
+            status_code = response.status
+            print(f"[CATEGORY] OFF response status: {status_code}")
+            if status_code == 200:
                 data = json.loads(response.read().decode('utf-8'))
-                products = data.get("products", [])
+                raw_products = data.get("products", [])
+                print(f"[CATEGORY] OFF search returned {len(raw_products)} raw products before filtering.")
+            else:
+                print(f"[CATEGORY] OFF search returned non-200 status: {status_code}")
     except Exception as e:
-        print(f"[CATEGORY] OFF category search '{off_cat}' failed: {e}. Falling back to mock data.")
-        
-    if not products:
-        mock_key = cat_normalized
-        if mock_key.startswith("en:"):
-            mock_key = mock_key[3:]
-        products = _CATEGORY_MOCK_DATA.get(mock_key, [])
-        
-    ranked_results = []
-    for p in products:
-        code = p.get("code")
-        name = p.get("product_name") or p.get("product_name_en") or p.get("product_name_fr")
-        brand = p.get("brands") or p.get("brand") or "Unknown Brand"
-        image = p.get("image_thumb_url") or p.get("image_small_url") or p.get("image_url") or ""
-        ingredients_text = p.get("ingredients_text") or ""
-        
-        if not code or not name:
-            continue
-            
-        if not ingredients_text.strip():
-            continue
-            
-        score, label = fast_score_ingredients(db, ingredients_text)
-        
-        ranked_results.append({
-            "code": str(code),
-            "name": str(name),
-            "brand": str(brand),
-            "image": str(image),
-            "score": score,
-            "label": label
-        })
-        
-    ranked_results.sort(key=lambda x: x["score"], reverse=True)
+        print(f"[CATEGORY] OFF category search '{cat_normalized}' request failed: {e}")
     
+    # Helper to filter products
+    def filter_and_score(products_list):
+        ranked = []
+        for p in products_list:
+            code = p.get("code")
+            name = p.get("product_name") or p.get("product_name_en") or p.get("product_name_fr") or p.get("name")
+            brand = p.get("brands") or p.get("brand") or "Unknown Brand"
+            image = p.get("image_thumb_url") or p.get("image_small_url") or p.get("image_url") or ""
+            ingredients_text = p.get("ingredients_text") or ""
+            
+            if not code or not name:
+                continue
+                
+            if not ingredients_text.strip():
+                continue
+                
+            score, label = fast_score_ingredients(db, ingredients_text)
+            ranked.append({
+                "code": str(code),
+                "name": str(name),
+                "brand": str(brand),
+                "image": str(image),
+                "score": score,
+                "label": label
+            })
+        return ranked
+
+    ranked_results = filter_and_score(raw_products)
+    print(f"[CATEGORY] Filtered to {len(ranked_results)} products with usable ingredient data from OFF.")
+
+    # 3. Fallback to similar mock category if filtered results are empty
+    if not ranked_results:
+        print(f"[CATEGORY] No usable products from OFF search. Attempting fallback matching for '{cat_normalized}'...")
+        similar_key = None
+        # Clean en: prefix and normalize separators
+        words = cat_normalized.replace("en:", "").replace("-", " ").replace("_", " ").split()
+        
+        # Try direct word match in mock keys
+        for word in words:
+            if word in _CATEGORY_MOCK_DATA:
+                similar_key = word
+                break
+        
+        # Try substring match in mock keys if no direct word match
+        if not similar_key:
+            for word in words:
+                for k in _CATEGORY_MOCK_DATA.keys():
+                    if word in k or k in word:
+                        similar_key = k
+                        break
+                if similar_key:
+                    break
+        
+        if similar_key:
+            print(f"[CATEGORY] Fallback matched similar mock key: '{similar_key}'")
+            mock_products = _CATEGORY_MOCK_DATA[similar_key]
+            ranked_results = filter_and_score(mock_products)
+            print(f"[CATEGORY] Loaded {len(ranked_results)} fallback products from mock key '{similar_key}'.")
+        else:
+            print(f"[CATEGORY] No similar mock category found for words: {words}")
+            
+    if not ranked_results:
+        # Truly empty — return a clean message field instead of an empty array silently
+        return {
+            "category": category,
+            "products": [],
+            "message": "No products with ingredient data found for this category yet. Try a different category."
+        }
+        
+    # Sort and rank
+    ranked_results.sort(key=lambda x: x["score"], reverse=True)
     for idx, item in enumerate(ranked_results):
         item["rank"] = idx + 1
         

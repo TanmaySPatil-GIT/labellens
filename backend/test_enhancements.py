@@ -108,5 +108,64 @@ class TestEnhancements(unittest.TestCase):
         self.assertEqual(data["ingredient"], "unknowningredient")
         self.assertEqual(data["safety_status"], "unsafe")
 
+    @patch("urllib.request.urlopen")
+    def test_get_category_best_success(self, mock_urlopen):
+        # Test successfully retrieving and filtering category products from OFF
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_data = {
+            "products": [
+                {
+                    "code": "111",
+                    "product_name": "Dynamic Biscuit A",
+                    "brands": "Brand A",
+                    "ingredients_text": "Wheat Flour, Sugar, Palm Oil"
+                },
+                {
+                    "code": "222",
+                    "product_name": "Dynamic Biscuit B",
+                    "brands": "Brand B",
+                    "ingredients_text": "Wheat Flour, Salt"
+                }
+            ]
+        }
+        mock_response.read.return_value = json.dumps(mock_data).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        response = self.client.get("/api/category-best?category=en:biscuits", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["category"], "en:biscuits")
+        self.assertEqual(len(data["products"]), 2)
+        codes = [prod["code"] for prod in data["products"]]
+        self.assertIn("111", codes)
+        self.assertIn("222", codes)
+        self.assertEqual(data["products"][0]["rank"], 1)
+
+    @patch("urllib.request.urlopen")
+    def test_get_category_best_fallback_similar(self, mock_urlopen):
+        # Test OFF search API returning empty/error, fallback matching similar mock category "chips"
+        mock_urlopen.side_effect = Exception("Service Temporarily Unavailable")
+
+        response = self.client.get("/api/category-best?category=en:chips-and-fries", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["category"], "en:chips-and-fries")
+        # Should match mock "chips" and return products
+        self.assertTrue(len(data["products"]) > 0)
+        self.assertEqual(data["products"][0]["brand"], "Lay's")
+
+    @patch("urllib.request.urlopen")
+    def test_get_category_best_empty_message(self, mock_urlopen):
+        # Test fallback failing to find matching mock category, returns empty with friendly message
+        mock_urlopen.side_effect = Exception("Service Temporarily Unavailable")
+
+        response = self.client.get("/api/category-best?category=en:non-existent-category", headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["category"], "en:non-existent-category")
+        self.assertEqual(len(data["products"]), 0)
+        self.assertIn("No products with ingredient data found", data["message"])
+
 if __name__ == "__main__":
     unittest.main()

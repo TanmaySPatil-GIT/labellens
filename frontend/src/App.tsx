@@ -88,6 +88,7 @@ function App() {
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
   const [leaderboardMessage, setLeaderboardMessage] = useState<string | null>(null);
+  const [selectedSearchProduct, setSelectedSearchProduct] = useState<any | null>(null);
 
   const [categories, setCategories] = useState<any[]>([]);
   const [categorySearch, setCategorySearch] = useState('');
@@ -912,6 +913,302 @@ function App() {
     );
   }
 
+  const renderSafetyResults = () => {
+    if (!parsing && parsedIngredients.length === 0) return null;
+    return (
+      <div className="mt-12 bg-white/80 backdrop-blur-md rounded-3xl border border-teal-100/50 shadow-xl p-8 animate-fadeIn">
+        <div className="flex items-center space-x-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-teal to-brand-green flex items-center justify-center text-white text-xl shadow-md">
+            🛡️
+          </div>
+          <div>
+            <h3 className="text-2xl font-bold text-slate-800">{t('safety.title')}</h3>
+            <p className="text-sm text-slate-500">{t('safety.subtitle')}</p>
+          </div>
+        </div>
+
+        {parsing ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <svg className="animate-spin h-10 w-10 text-brand-teal mb-4" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            <p className="text-slate-600 font-semibold">{t('safety.loading')}</p>
+            <p className="text-xs text-slate-400 mt-1">{t('safety.loadingSubtitle')}</p>
+          </div>
+        ) : (
+          <div>
+            {/* Product Guess Title */}
+            {productGuess && (
+              <div className="flex flex-col items-center justify-center text-center mb-6 relative">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">{t('safety.detectedCategory')}</span>
+                <div className="flex items-center justify-center space-x-2">
+                  <span className="text-xl sm:text-2xl font-extrabold text-slate-800 bg-gradient-to-r from-teal-700 to-emerald-700 bg-clip-text text-transparent">
+                    {productGuess}
+                  </span>
+                  
+                  {/* Favorite Button */}
+                  <button
+                    onClick={addFavorite}
+                    className={`p-1.5 rounded-full border transition-all duration-300 focus:outline-none ${
+                      userFavorites.some((f) => f.product_name === productGuess)
+                        ? 'bg-rose-50 border-rose-200 text-rose-500 scale-105 shadow-sm'
+                        : 'bg-slate-50 border-slate-200 hover:border-rose-300 text-slate-400 hover:text-rose-500'
+                    }`}
+                    title={userFavorites.some((f) => f.product_name === productGuess) ? "Favorited" : "Add to favorites"}
+                  >
+                    {userFavorites.some((f) => f.product_name === productGuess) ? '❤️' : '🖤'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Score + Chart Row */}
+            {overallScore !== null && (
+              <div className="flex flex-col sm:flex-row items-center sm:items-start justify-center gap-6 mb-8">
+
+                {/* Circular Score Badge */}
+                <div className="flex flex-col items-center justify-center p-4 bg-teal-50/10 border border-teal-100/30 rounded-2xl min-w-[160px] shadow-sm">
+                  <div className="relative w-28 h-28 flex items-center justify-center">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="38" className="stroke-slate-100 fill-none" strokeWidth="8" />
+                      <circle
+                        cx="50" cy="50" r="38"
+                        className={`fill-none transition-all duration-1000 ${
+                          overallScore >= 80 ? 'stroke-emerald-500' : overallScore >= 60 ? 'stroke-yellow-500' : overallScore >= 40 ? 'stroke-amber-500' : 'stroke-orange-500'
+                        }`}
+                        strokeWidth="8"
+                        strokeDasharray="238.76"
+                        strokeDashoffset={238.76 - (238.76 * overallScore) / 100}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <div className="absolute flex flex-col items-center">
+                      <span className={`text-2xl font-black ${
+                        overallScore >= 80 ? 'text-emerald-600' : overallScore >= 60 ? 'text-yellow-600' : overallScore >= 40 ? 'text-amber-600' : 'text-orange-600'
+                      }`}>{overallScore}</span>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Score</span>
+                    </div>
+                  </div>
+                  <div className={`mt-3 px-3 py-0.5 rounded-full text-xs font-black uppercase tracking-wider ${
+                    overallScore >= 80 ? 'bg-emerald-50 text-emerald-700' : overallScore >= 60 ? 'bg-yellow-50 text-yellow-700' : overallScore >= 40 ? 'bg-amber-50 text-amber-700' : 'bg-orange-50/70 text-orange-700'
+                  }`}>
+                    {scoreLabel}
+                  </div>
+                </div>
+
+                {/* Safety Breakdown Bar Chart */}
+                {parsedIngredients.length > 0 && (() => {
+                  const counts = {
+                    safe:     parsedIngredients.filter(i => i.safety_status === 'safe').length,
+                    moderate: parsedIngredients.filter(i => i.safety_status === 'moderate').length,
+                    unsafe:   parsedIngredients.filter(i => i.safety_status === 'unsafe').length,
+                    unknown:  parsedIngredients.filter(i => !['safe','moderate','unsafe'].includes(i.safety_status)).length,
+                  };
+                  const chartData = [
+                    { name: 'Safe',     value: counts.safe,     color: '#10b981' },
+                    { name: 'Moderate', value: counts.moderate, color: '#f59e0b' },
+                    { name: 'Unsafe',   value: counts.unsafe,   color: '#ef4444' },
+                    { name: 'Unknown',  value: counts.unknown,  color: '#94a3b8' },
+                  ].filter(d => d.value > 0);
+                  return (
+                    <div className="flex-1 min-w-0 bg-white/60 border border-slate-100 rounded-2xl p-4 shadow-sm">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Ingredient Breakdown</p>
+                      <ResponsiveContainer width="100%" height={120}>
+                        <BarChart data={chartData} margin={{ top: 0, right: 4, left: -28, bottom: 0 }} barSize={28}>
+                          <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 600, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} allowDecimals={false} axisLine={false} tickLine={false} />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: 12 }}
+                            cursor={{ fill: 'rgba(0,0,0,0.04)' }}
+                          />
+                          <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                            {chartData.map((entry, index) => (
+                              <Cell key={index} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* ── Allergen Summary Banner ── */}
+            {parsedIngredients.length > 0 && (() => {
+              const allergens = [...new Set(
+                parsedIngredients
+                  .map(i => i.allergen)
+                  .filter(a => a && a.toLowerCase() !== 'none')
+                  .map(a => a.charAt(0).toUpperCase() + a.slice(1))
+              )];
+              if (allergens.length === 0) return null;
+              return (
+                <div className="mb-5 flex items-center space-x-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl shadow-sm animate-fadeIn">
+                  <span className="text-xl shrink-0">⚠️</span>
+                  <div>
+                    <span className="text-sm font-bold text-amber-800">Contains: </span>
+                    <span className="text-sm font-semibold text-amber-700">{allergens.join(', ')}</span>
+                    <p className="text-xs text-amber-600 mt-0.5">This product may not be suitable for people with these allergies.</p>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Safety Assessment Table */}
+            {parsedIngredients.length > 0 && (
+              <div className="overflow-x-auto border border-slate-150 rounded-2xl shadow-sm">
+                <table className="min-w-full divide-y divide-slate-150 text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th scope="col" className="px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.name')}</th>
+                      <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.status')}</th>
+                      <th scope="col" className="px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.whatIsThis')}</th>
+                      <th scope="col" className="px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.reason')}</th>
+                      <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.allergen')}</th>
+                      <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.frequency')}</th>
+                      <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.source')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-150 bg-white">
+                    {parsedIngredients.map((item, idx) => {
+                      const isUnsafe = item.safety_status === 'unsafe';
+                      const isSafe = item.safety_status === 'safe';
+                      const isModerate = item.safety_status === 'moderate';
+                      
+                      let rowBg = 'bg-white hover:bg-slate-50/50';
+                      let statusIcon = '⚠️';
+                      let reasonStyle = 'text-slate-500 font-normal';
+                      
+                      if (isUnsafe) {
+                        rowBg = 'bg-red-50/70 hover:bg-red-50/90 border-y border-red-100';
+                        statusIcon = '❌';
+                        reasonStyle = 'text-red-700 font-bold';
+                      } else if (isSafe) {
+                        rowBg = 'bg-emerald-50/15 hover:bg-emerald-50/30';
+                        statusIcon = '✓';
+                      } else if (isModerate) {
+                        rowBg = 'bg-amber-50/20 hover:bg-amber-50/35';
+                        statusIcon = '⚠️';
+                      }
+
+                      return (
+                        <tr key={idx} className={`${rowBg} transition-colors`}>
+                          <td className="px-4 py-3.5 font-bold text-slate-800 whitespace-nowrap">{item.ingredient}</td>
+                          <td className="px-4 py-3.5 text-center text-lg">{statusIcon}</td>
+                          <td className="px-4 py-3.5 text-slate-600 leading-relaxed font-normal min-w-[200px]">{item.simple_explanation}</td>
+                          <td className={`px-4 py-3.5 leading-relaxed min-w-[150px] ${reasonStyle}`}>{item.reason || '-'}</td>
+                          <td className="px-4 py-3.5 text-center whitespace-nowrap">
+                            {item.allergen !== 'none' ? (
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                                isUnsafe ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {item.allergen}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">{t('safety.col.noAllergen')}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 text-center whitespace-nowrap font-medium text-slate-600">{item.safe_frequency}</td>
+                          <td className="px-4 py-3.5 text-center whitespace-nowrap text-slate-500 font-medium">{item.source}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* ── Sources Citation ── */}
+            {parsedIngredients.length > 0 && (() => {
+              const usedSources = [...new Set(parsedIngredients.map(i => i.source).filter(Boolean))];
+              const SOURCE_META: Record<string, { icon: string; url: string }> = {
+                'FSSAI':           { icon: '🇮🇳', url: 'https://www.fssai.gov.in' },
+                'WHO':             { icon: '🌍', url: 'https://www.who.int' },
+                'ICMR':            { icon: '🔬', url: 'https://www.icmr.gov.in' },
+                'FDA':             { icon: '🇺🇸', url: 'https://www.fda.gov' },
+                'EFSA':            { icon: '🇪🇺', url: 'https://www.efsa.europa.eu' },
+                'Open Food Facts': { icon: '🥫', url: 'https://world.openfoodfacts.org' },
+                'LabelLens AI Engine': { icon: '🤖', url: '#' },
+                'System Fallback': { icon: '⚙️', url: '#' },
+              };
+              return (
+                <div className="mt-6 pt-5 border-t border-slate-100">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Sources</p>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {usedSources.map((src) => {
+                      const meta = SOURCE_META[src] || { icon: '📄', url: '#' };
+                      return (
+                        <a
+                          key={src}
+                          href={meta.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center space-x-1.5 px-3 py-1 bg-slate-50 hover:bg-teal-50 border border-slate-200 hover:border-teal-200 rounded-full text-xs font-semibold text-slate-600 hover:text-brand-teal transition-colors"
+                        >
+                          <span>{meta.icon}</span>
+                          <span>{src}</span>
+                        </a>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-400 italic">Safety data based on official food safety guidelines and open data sources. This app is for informational purposes only and does not constitute medical advice.</p>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ── Alternative Suggestion Card ── */}
+        {!parsing && (loadingAlternative || alternative) && (
+          <div className="mt-8 animate-fadeIn">
+            {loadingAlternative ? (
+              <div className="flex items-center space-x-3 p-5 bg-teal-50/60 border border-teal-100 rounded-2xl">
+                <svg className="animate-spin h-5 w-5 text-brand-teal shrink-0" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <p className="text-sm font-semibold text-teal-700">{t('alternative.loading')}</p>
+              </div>
+            ) : alternative ? (
+              <div className="relative overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50/60 shadow-md shadow-emerald-900/5 p-6">
+                <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full bg-emerald-100/50 blur-2xl pointer-events-none" />
+                <div className="flex items-start space-x-4">
+                  <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl shrink-0 shadow-sm">
+                    💡
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mb-0.5">{t('alternative.label')}</p>
+                    <h4 className="text-lg font-extrabold text-slate-800 leading-tight mb-3">
+                      {t('alternative.heading')}&nbsp;
+                      <span className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                        {alternative.alternative_name}
+                      </span>
+                    </h4>
+                    {alternative.reasons.length > 0 && (
+                      <ul className="space-y-1.5">
+                        {alternative.reasons.map((reason, i) => (
+                          <li key={i} className="flex items-start space-x-2 text-sm text-slate-600">
+                            <span className="mt-0.5 w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-black shrink-0">
+                              {i + 1}
+                            </span>
+                            <span>{reason}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="mt-4 text-[10px] text-slate-400 italic">{t('alternative.disclaimer')}</p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-brand-mint flex flex-col font-sans">
       {/* Navigation Header */}
@@ -1089,7 +1386,7 @@ function App() {
             <div className="flex flex-wrap bg-slate-100/80 p-1 rounded-2xl mb-6 max-w-lg border border-slate-200/40 gap-1 sm:gap-0">
               <button
                 type="button"
-                onClick={() => setActiveTab('scan')}
+                onClick={() => { setActiveTab('scan'); setSelectedSearchProduct(null); }}
                 className={`flex-1 min-w-[70px] py-1.5 px-3 sm:px-4 rounded-xl text-[10px] sm:text-xs font-bold transition-all duration-200 ${
                   activeTab === 'scan' ? 'bg-white text-brand-teal shadow-sm' : 'text-slate-500 hover:text-slate-800'
                 }`}
@@ -1098,7 +1395,7 @@ function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('search')}
+                onClick={() => { setActiveTab('search'); setSelectedSearchProduct(null); }}
                 className={`flex-1 min-w-[70px] py-1.5 px-3 sm:px-4 rounded-xl text-[10px] sm:text-xs font-bold transition-all duration-200 ${
                   activeTab === 'search' ? 'bg-white text-brand-teal shadow-sm' : 'text-slate-500 hover:text-slate-800'
                 }`}
@@ -1107,7 +1404,7 @@ function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('ingredient')}
+                onClick={() => { setActiveTab('ingredient'); setSelectedSearchProduct(null); }}
                 className={`flex-1 min-w-[70px] py-1.5 px-3 sm:px-4 rounded-xl text-[10px] sm:text-xs font-bold transition-all duration-200 ${
                   activeTab === 'ingredient' ? 'bg-white text-brand-teal shadow-sm' : 'text-slate-500 hover:text-slate-800'
                 }`}
@@ -1116,7 +1413,7 @@ function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('history')}
+                onClick={() => { setActiveTab('history'); setSelectedSearchProduct(null); }}
                 className={`flex-1 min-w-[70px] py-1.5 px-3 sm:px-4 rounded-xl text-[10px] sm:text-xs font-bold transition-all duration-200 ${
                   activeTab === 'history' ? 'bg-white text-brand-teal shadow-sm' : 'text-slate-500 hover:text-slate-800'
                 }`}
@@ -1125,7 +1422,7 @@ function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('favorites')}
+                onClick={() => { setActiveTab('favorites'); setSelectedSearchProduct(null); }}
                 className={`flex-1 min-w-[70px] py-1.5 px-3 sm:px-4 rounded-xl text-[10px] sm:text-xs font-bold transition-all duration-200 ${
                   activeTab === 'favorites' ? 'bg-white text-brand-teal shadow-sm' : 'text-slate-500 hover:text-slate-800'
                 }`}
@@ -1284,65 +1581,127 @@ function App() {
             {activeTab === 'search' && (
               /* Brand/Product Name Search Interface */
               <div className="flex flex-col h-full">
-                <h2 className="text-2xl font-bold text-slate-800 mb-2">{t('search.tabSearch')}</h2>
-                <p className="text-sm text-slate-500 mb-6">{t('search.placeholder')}</p>
-                
-                <form onSubmit={searchProducts} className="flex space-x-3 mb-6">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={t('search.placeholder')}
-                    className="flex-grow px-4 py-2.5 bg-white border border-teal-200 focus:border-brand-teal rounded-xl outline-none text-slate-800 font-medium placeholder-slate-400 transition"
-                  />
-                  <button
-                    type="submit"
-                    disabled={searching}
-                    className="px-6 py-2.5 bg-brand-teal hover:bg-teal-700 text-white font-bold rounded-xl transition shadow-md hover:shadow-lg focus:outline-none flex items-center justify-center space-x-2"
-                  >
-                    {searching ? (
-                      <>
-                        <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        <span>{t('search.searching')}</span>
-                      </>
-                    ) : (
-                      <span>{t('search.button')}</span>
-                    )}
-                  </button>
-                </form>
+                {!selectedSearchProduct ? (
+                  <>
+                    <h2 className="text-2xl font-bold text-slate-800 mb-2">{t('search.tabSearch')}</h2>
+                    <p className="text-sm text-slate-500 mb-6">{t('search.placeholder')}</p>
+                    
+                    <form onSubmit={searchProducts} className="flex space-x-3 mb-6">
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder={t('search.placeholder')}
+                        className="flex-grow px-4 py-2.5 bg-white border border-teal-200 focus:border-brand-teal rounded-xl outline-none text-slate-800 font-medium placeholder-slate-400 transition"
+                      />
+                      <button
+                        type="submit"
+                        disabled={searching}
+                        className="px-6 py-2.5 bg-brand-teal hover:bg-teal-700 text-white font-bold rounded-xl transition shadow-md hover:shadow-lg focus:outline-none flex items-center justify-center space-x-2"
+                      >
+                        {searching ? (
+                          <>
+                            <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            <span>{t('search.searching')}</span>
+                          </>
+                        ) : (
+                          <span>{t('search.button')}</span>
+                        )}
+                      </button>
+                    </form>
 
-                {searchError && (
-                  <div className="mb-4 p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs font-semibold text-amber-800 flex items-center space-x-2">
-                    <span>⚠️</span>
-                    <span>{searchError}</span>
+                    {searchError && (
+                      <div className="mb-4 p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs font-semibold text-amber-800 flex items-center space-x-2">
+                        <span>⚠️</span>
+                        <span>{searchError}</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[300px] overflow-y-auto pr-1">
+                      {searchResults.map((product) => (
+                        <div
+                          key={product.code}
+                          onClick={() => {
+                            setSelectedSearchProduct(product);
+                            analyzeBarcode(product.code, product.name, product.image);
+                          }}
+                          className="flex items-center space-x-3 p-3 bg-white hover:bg-teal-50/20 border border-slate-100 hover:border-teal-200 rounded-2xl cursor-pointer transition shadow-sm hover:shadow group"
+                        >
+                          <div className="w-12 h-12 bg-slate-50 border border-slate-150 rounded-xl overflow-hidden flex items-center justify-center shrink-0">
+                            {product.image ? (
+                              <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                            ) : (
+                              <span className="text-xl">🥫</span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-grow">
+                            <h4 className="text-xs font-bold text-slate-800 truncate group-hover:text-brand-teal transition-colors">{product.name}</h4>
+                            <p className="text-[10px] text-slate-500 font-medium truncate">{product.brand}</p>
+                            <p className="text-[9px] text-slate-400 font-mono mt-0.5 truncate">{product.code}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-center mb-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSearchProduct(null);
+                          setAnalysis({ analyzing: false, rawText: null, error: null });
+                          setParsedIngredients([]);
+                          setPreviewUrl(null);
+                        }}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition text-xs flex items-center space-x-2 focus:outline-none shadow-sm"
+                      >
+                        <span>← Back to search results</span>
+                      </button>
+                    </div>
+
+                    {parsing && (
+                      <div className="flex flex-col items-center justify-center py-12 bg-white/80 rounded-3xl border border-teal-100 shadow-xl p-8">
+                        <svg className="animate-spin h-10 w-10 text-brand-teal mb-4" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                        </svg>
+                        <p className="text-sm font-bold text-slate-700">Analyzing {selectedSearchProduct.name}...</p>
+                      </div>
+                    )}
+
+                    {!parsing && analysis.error && (
+                      <div className="bg-white/85 backdrop-blur-md rounded-3xl border border-rose-100 shadow-xl p-8 flex flex-col items-center animate-fadeIn">
+                        <span className="text-4xl mb-4">🥫</span>
+                        <h4 className="text-lg font-bold text-slate-800 mb-2">No Ingredients Available</h4>
+                        <p className="text-sm font-semibold text-slate-500 text-center mb-6 max-w-sm">
+                          Ingredient data isn't available for this product yet. Try scanning the physical label instead.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSearchProduct(null);
+                            setAnalysis({ analyzing: false, rawText: null, error: null });
+                            setParsedIngredients([]);
+                            setPreviewUrl(null);
+                          }}
+                          className="px-6 py-2.5 bg-brand-teal hover:bg-teal-700 text-white font-bold rounded-xl transition shadow-md focus:outline-none"
+                        >
+                          Try Another Product
+                        </button>
+                      </div>
+                    )}
+
+                    {!parsing && !analysis.error && parsedIngredients.length > 0 && (
+                      <div className="animate-fadeIn mt-2">
+                        {renderSafetyResults()}
+                      </div>
+                    )}
                   </div>
                 )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[300px] overflow-y-auto pr-1">
-                  {searchResults.map((product) => (
-                    <div
-                      key={product.code}
-                      onClick={() => analyzeBarcode(product.code, product.name, product.image)}
-                      className="flex items-center space-x-3 p-3 bg-white hover:bg-teal-50/20 border border-slate-100 hover:border-teal-200 rounded-2xl cursor-pointer transition shadow-sm hover:shadow group"
-                    >
-                      <div className="w-12 h-12 bg-slate-50 border border-slate-150 rounded-xl overflow-hidden flex items-center justify-center shrink-0">
-                        {product.image ? (
-                          <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                        ) : (
-                          <span className="text-xl">🥫</span>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-grow">
-                        <h4 className="text-xs font-bold text-slate-800 truncate group-hover:text-brand-teal transition-colors">{product.name}</h4>
-                        <p className="text-[10px] text-slate-500 font-medium truncate">{product.brand}</p>
-                        <p className="text-[9px] text-slate-400 font-mono mt-0.5 truncate">{product.code}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
 
@@ -1854,300 +2213,7 @@ function App() {
       </div>
 
       {/* Parsed Ingredients Safety Assessment */}
-      {(parsing || parsedIngredients.length > 0) && (
-          <div className="mt-12 bg-white/80 backdrop-blur-md rounded-3xl border border-teal-100/50 shadow-xl p-8 animate-fadeIn">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-teal to-brand-green flex items-center justify-center text-white text-xl shadow-md">
-                🛡️
-              </div>
-              <div>
-                <h3 className="text-2xl font-bold text-slate-800">{t('safety.title')}</h3>
-                <p className="text-sm text-slate-500">{t('safety.subtitle')}</p>
-              </div>
-            </div>
-
-            {parsing ? (
-              <div className="flex flex-col items-center justify-center py-12">
-                <svg className="animate-spin h-10 w-10 text-brand-teal mb-4" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                <p className="text-slate-600 font-semibold">{t('safety.loading')}</p>
-                <p className="text-xs text-slate-400 mt-1">{t('safety.loadingSubtitle')}</p>
-              </div>
-            ) : (
-              <div>
-                {/* Product Guess Title */}
-                {productGuess && (
-                  <div className="flex flex-col items-center justify-center text-center mb-6 relative">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">{t('safety.detectedCategory')}</span>
-                    <div className="flex items-center justify-center space-x-2">
-                      <span className="text-xl sm:text-2xl font-extrabold text-slate-800 bg-gradient-to-r from-teal-700 to-emerald-700 bg-clip-text text-transparent">
-                        {productGuess}
-                      </span>
-                      
-                      {/* Favorite Button */}
-                      <button
-                        onClick={addFavorite}
-                        className={`p-1.5 rounded-full border transition-all duration-300 focus:outline-none ${
-                          userFavorites.some((f) => f.product_name === productGuess)
-                            ? 'bg-rose-50 border-rose-200 text-rose-500 scale-105 shadow-sm'
-                            : 'bg-slate-50 border-slate-200 hover:border-rose-300 text-slate-400 hover:text-rose-500'
-                        }`}
-                        title={userFavorites.some((f) => f.product_name === productGuess) ? "Favorited" : "Add to favorites"}
-                      >
-                        {userFavorites.some((f) => f.product_name === productGuess) ? '❤️' : '🖤'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Score + Chart Row */}
-                {overallScore !== null && (
-                  <div className="flex flex-col sm:flex-row items-center sm:items-start justify-center gap-6 mb-8">
-
-                    {/* Circular Score Badge */}
-                    <div className="flex flex-col items-center justify-center p-4 bg-teal-50/10 border border-teal-100/30 rounded-2xl min-w-[160px] shadow-sm">
-                      <div className="relative w-28 h-28 flex items-center justify-center">
-                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                          <circle cx="50" cy="50" r="38" className="stroke-slate-100 fill-none" strokeWidth="8" />
-                          <circle
-                            cx="50" cy="50" r="38"
-                            className={`fill-none transition-all duration-1000 ${
-                              overallScore >= 80 ? 'stroke-emerald-500' : overallScore >= 60 ? 'stroke-yellow-500' : overallScore >= 40 ? 'stroke-amber-500' : 'stroke-orange-500'
-                            }`}
-                            strokeWidth="8"
-                            strokeDasharray="238.76"
-                            strokeDashoffset={238.76 - (238.76 * overallScore) / 100}
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                        <div className="absolute flex flex-col items-center">
-                          <span className={`text-2xl font-black ${
-                            overallScore >= 80 ? 'text-emerald-600' : overallScore >= 60 ? 'text-yellow-600' : overallScore >= 40 ? 'text-amber-600' : 'text-orange-600'
-                          }`}>{overallScore}</span>
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Score</span>
-                        </div>
-                      </div>
-                      <div className={`mt-3 px-3 py-0.5 rounded-full text-xs font-black uppercase tracking-wider ${
-                        overallScore >= 80 ? 'bg-emerald-50 text-emerald-700' : overallScore >= 60 ? 'bg-yellow-50 text-yellow-700' : overallScore >= 40 ? 'bg-amber-50 text-amber-700' : 'bg-orange-50/70 text-orange-700'
-                      }`}>
-                        {scoreLabel}
-                      </div>
-                    </div>
-
-                    {/* Safety Breakdown Bar Chart */}
-                    {parsedIngredients.length > 0 && (() => {
-                      const counts = {
-                        safe:     parsedIngredients.filter(i => i.safety_status === 'safe').length,
-                        moderate: parsedIngredients.filter(i => i.safety_status === 'moderate').length,
-                        unsafe:   parsedIngredients.filter(i => i.safety_status === 'unsafe').length,
-                        unknown:  parsedIngredients.filter(i => !['safe','moderate','unsafe'].includes(i.safety_status)).length,
-                      };
-                      const chartData = [
-                        { name: 'Safe',     value: counts.safe,     color: '#10b981' },
-                        { name: 'Moderate', value: counts.moderate, color: '#f59e0b' },
-                        { name: 'Unsafe',   value: counts.unsafe,   color: '#ef4444' },
-                        { name: 'Unknown',  value: counts.unknown,  color: '#94a3b8' },
-                      ].filter(d => d.value > 0);
-                      return (
-                        <div className="flex-1 min-w-0 bg-white/60 border border-slate-100 rounded-2xl p-4 shadow-sm">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Ingredient Breakdown</p>
-                          <ResponsiveContainer width="100%" height={120}>
-                            <BarChart data={chartData} margin={{ top: 0, right: 4, left: -28, bottom: 0 }} barSize={28}>
-                              <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 600, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                              <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} allowDecimals={false} axisLine={false} tickLine={false} />
-                              <Tooltip
-                                contentStyle={{ borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: 12 }}
-                                cursor={{ fill: 'rgba(0,0,0,0.04)' }}
-                              />
-                              <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                                {chartData.map((entry, index) => (
-                                  <Cell key={index} fill={entry.color} />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                {/* ── Allergen Summary Banner ── */}
-                {parsedIngredients.length > 0 && (() => {
-                  const allergens = [...new Set(
-                    parsedIngredients
-                      .map(i => i.allergen)
-                      .filter(a => a && a.toLowerCase() !== 'none')
-                      .map(a => a.charAt(0).toUpperCase() + a.slice(1))
-                  )];
-                  if (allergens.length === 0) return null;
-                  return (
-                    <div className="mb-5 flex items-center space-x-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl shadow-sm animate-fadeIn">
-                      <span className="text-xl shrink-0">⚠️</span>
-                      <div>
-                        <span className="text-sm font-bold text-amber-800">Contains: </span>
-                        <span className="text-sm font-semibold text-amber-700">{allergens.join(', ')}</span>
-                        <p className="text-xs text-amber-600 mt-0.5">This product may not be suitable for people with these allergies.</p>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Safety Assessment Table */}
-                {parsedIngredients.length > 0 && (
-                  <div className="overflow-x-auto border border-slate-150 rounded-2xl shadow-sm">
-                    <table className="min-w-full divide-y divide-slate-150 text-sm">
-                      <thead className="bg-slate-50">
-                        <tr>
-                          <th scope="col" className="px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.name')}</th>
-                          <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.status')}</th>
-                          <th scope="col" className="px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.whatIsThis')}</th>
-                          <th scope="col" className="px-4 py-3 text-left font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.reason')}</th>
-                          <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.allergen')}</th>
-                          <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.frequency')}</th>
-                          <th scope="col" className="px-4 py-3 text-center font-bold text-slate-500 uppercase tracking-wider text-xs">{t('safety.col.source')}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-150 bg-white">
-                        {parsedIngredients.map((item, idx) => {
-                          const isUnsafe = item.safety_status === 'unsafe';
-                          const isSafe = item.safety_status === 'safe';
-                          const isModerate = item.safety_status === 'moderate';
-                          
-                          let rowBg = 'bg-white hover:bg-slate-50/50';
-                          let statusIcon = '⚠️';
-                          let reasonStyle = 'text-slate-500 font-normal';
-                          
-                          if (isUnsafe) {
-                            rowBg = 'bg-red-50/70 hover:bg-red-50/90 border-y border-red-100';
-                            statusIcon = '❌';
-                            reasonStyle = 'text-red-700 font-bold';
-                          } else if (isSafe) {
-                            rowBg = 'bg-emerald-50/15 hover:bg-emerald-50/30';
-                            statusIcon = '✓';
-                          } else if (isModerate) {
-                            rowBg = 'bg-amber-50/20 hover:bg-amber-50/35';
-                            statusIcon = '⚠️';
-                          }
-
-                          return (
-                            <tr key={idx} className={`${rowBg} transition-colors`}>
-                              <td className="px-4 py-3.5 font-bold text-slate-800 whitespace-nowrap">{item.ingredient}</td>
-                              <td className="px-4 py-3.5 text-center text-lg">{statusIcon}</td>
-                              <td className="px-4 py-3.5 text-slate-600 leading-relaxed font-normal min-w-[200px]">{item.simple_explanation}</td>
-                              <td className={`px-4 py-3.5 leading-relaxed min-w-[150px] ${reasonStyle}`}>{item.reason || '-'}</td>
-                              <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                                {item.allergen !== 'none' ? (
-                                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                                    isUnsafe ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
-                                  }`}>
-                                    {item.allergen}
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">{t('safety.col.noAllergen')}</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3.5 text-center whitespace-nowrap font-medium text-slate-600">{item.safe_frequency}</td>
-                              <td className="px-4 py-3.5 text-center whitespace-nowrap text-slate-500 font-medium">{item.source}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* ── Sources Citation ── */}
-                {parsedIngredients.length > 0 && (() => {
-                  const usedSources = [...new Set(parsedIngredients.map(i => i.source).filter(Boolean))];
-                  const SOURCE_META: Record<string, { icon: string; url: string }> = {
-                    'FSSAI':           { icon: '🇮🇳', url: 'https://www.fssai.gov.in' },
-                    'WHO':             { icon: '🌍', url: 'https://www.who.int' },
-                    'ICMR':            { icon: '🔬', url: 'https://www.icmr.gov.in' },
-                    'FDA':             { icon: '🇺🇸', url: 'https://www.fda.gov' },
-                    'EFSA':            { icon: '🇪🇺', url: 'https://www.efsa.europa.eu' },
-                    'Open Food Facts': { icon: '🥫', url: 'https://world.openfoodfacts.org' },
-                    'LabelLens AI Engine': { icon: '🤖', url: '#' },
-                    'System Fallback': { icon: '⚙️', url: '#' },
-                  };
-                  return (
-                    <div className="mt-6 pt-5 border-t border-slate-100">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Sources</p>
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {usedSources.map((src) => {
-                          const meta = SOURCE_META[src] || { icon: '📄', url: '#' };
-                          return (
-                            <a
-                              key={src}
-                              href={meta.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center space-x-1.5 px-3 py-1 bg-slate-50 hover:bg-teal-50 border border-slate-200 hover:border-teal-200 rounded-full text-xs font-semibold text-slate-600 hover:text-brand-teal transition-colors"
-                            >
-                              <span>{meta.icon}</span>
-                              <span>{src}</span>
-                            </a>
-                          );
-                        })}
-                      </div>
-                      <p className="text-[11px] text-slate-400 italic">Safety data based on official food safety guidelines and open data sources. This app is for informational purposes only and does not constitute medical advice.</p>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* ── Alternative Suggestion Card ── */}
-            {!parsing && (loadingAlternative || alternative) && (
-              <div className="mt-8 animate-fadeIn">
-                {loadingAlternative ? (
-                  <div className="flex items-center space-x-3 p-5 bg-teal-50/60 border border-teal-100 rounded-2xl">
-                    <svg className="animate-spin h-5 w-5 text-brand-teal shrink-0" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    <p className="text-sm font-semibold text-teal-700">{t('alternative.loading')}</p>
-                  </div>
-                ) : alternative ? (
-                  <div className="relative overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50/60 shadow-md shadow-emerald-900/5 p-6">
-                    {/* Decorative background blob */}
-                    <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full bg-emerald-100/50 blur-2xl pointer-events-none" />
-
-                    <div className="flex items-start space-x-4">
-                      <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl shrink-0 shadow-sm">
-                        💡
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 mb-0.5">{t('alternative.label')}</p>
-                        <h4 className="text-lg font-extrabold text-slate-800 leading-tight mb-3">
-                          {t('alternative.heading')}&nbsp;
-                          <span className="bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                            {alternative.alternative_name}
-                          </span>
-                        </h4>
-                        {alternative.reasons.length > 0 && (
-                          <ul className="space-y-1.5">
-                            {alternative.reasons.map((reason, i) => (
-                              <li key={i} className="flex items-start space-x-2 text-sm text-slate-600">
-                                <span className="mt-0.5 w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-black shrink-0">
-                                  {i + 1}
-                                </span>
-                                <span>{reason}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        <p className="mt-4 text-[10px] text-slate-400 italic">{t('alternative.disclaimer')}</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
-        )}
+      {activeTab !== 'search' && renderSafetyResults()}
       </main>
 
       {/* Footer */}
